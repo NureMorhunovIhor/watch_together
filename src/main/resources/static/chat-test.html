@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        input, button, textarea {
+            margin: 4px 0;
+            padding: 8px;
+        }
+
+        .row {
+            margin-bottom: 12px;
+        }
+
+        .block {
+            border: 1px solid #ccc;
+            padding: 12px;
+            margin-bottom: 16px;
+        }
+
+        #log {
+            background: #111;
+            color: #0f0;
+            padding: 12px;
+            min-height: 200px;
+            white-space: pre-wrap;
+        }
+
+        #messages {
+            background: #f7f7f7;
+            padding: 12px;
+            min-height: 150px;
+            white-space: pre-wrap;
+            border: 1px solid #ccc;
+        }
+
+        .title {
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+
+<h2>Chat Test</h2>
+
+<div class="block">
+    <div class="title">Connection</div>
+    <div class="row">
+        <input id="token" placeholder="JWT token" style="width: 600px;">
+    </div>
+    <div class="row">
+        <input id="roomCode" placeholder="Room code" style="width: 220px;">
+        <button onclick="connect()">Connect</button>
+        <button onclick="disconnect()">Disconnect</button>
+        <button onclick="loadHistory()">Load history</button>
+    </div>
+</div>
+
+<div class="block">
+    <div class="title">Send / Reply</div>
+    <div class="row">
+        <input id="message" placeholder="Message text" style="width: 400px;">
+        <input id="replyToMessageId" placeholder="Reply to message id (optional)" style="width: 220px;">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+</div>
+
+<div class="block">
+    <div class="title">Edit message</div>
+    <div class="row">
+        <input id="editMessageId" placeholder="Message id" style="width: 180px;">
+        <input id="editContent" placeholder="New content" style="width: 400px;">
+        <button onclick="editMessage()">Edit</button>
+    </div>
+</div>
+
+<div class="block">
+    <div class="title">Delete message</div>
+    <div class="row">
+        <input id="deleteMessageId" placeholder="Message id" style="width: 180px;">
+        <button onclick="deleteMessage()">Delete</button>
+    </div>
+</div>
+
+<div class="block">
+    <div class="title">Reactions</div>
+    <div class="row">
+        <input id="reactionMessageId" placeholder="Message id" style="width: 180px;">
+        <input id="reactionType" placeholder="Reaction type (e.g. LIKE)" style="width: 240px;">
+        <button onclick="addReaction()">Add reaction</button>
+        <button onclick="removeReaction()">Remove reaction</button>
+    </div>
+</div>
+
+<div class="block">
+    <div class="title">Messages / History</div>
+    <div id="messages"></div>
+</div>
+
+<div class="block">
+    <div class="title">Log</div>
+    <pre id="log"></pre>
+</div>
+
+<script>
+    let stompClient = null;
+
+    function log(text) {
+        const logEl = document.getElementById('log');
+        logEl.textContent += text + '\n';
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function getToken() {
+        return document.getElementById('token').value.trim();
+    }
+
+    function getRoomCode() {
+        return document.getElementById('roomCode').value.trim();
+    }
+
+    function authHeadersJson() {
+        return {
+            'Authorization': 'Bearer ' + getToken(),
+            'Content-Type': 'application/json'
+        };
+    }
+
+    function safeJsonParse(text) {
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            return text;
+        }
+    }
+
+    function renderMessages(messages) {
+        const messagesEl = document.getElementById('messages');
+
+        if (!Array.isArray(messages) || messages.length === 0) {
+            messagesEl.textContent = 'No messages';
+            return;
+        }
+
+        messagesEl.textContent = messages.map(m => {
+            const reactions = (m.reactions || [])
+                .map(r => `${r.username}:${r.reactionType}`)
+                .join(', ');
+
+            return [
+                `id=${m.id}`,
+                `sender=${m.senderUsername} (${m.senderDisplayName || '-'})`,
+                `content=${m.content}`,
+                `replyToMessageId=${m.replyToMessageId ?? '-'}`,
+                `edited=${m.edited}`,
+                `deleted=${m.deleted}`,
+                `sentAt=${m.sentAt}`,
+                `editedAt=${m.editedAt ?? '-'}`,
+                `reactions=[${reactions}]`
+            ].join(' | ');
+        }).join('\n\n');
+    }
+
+    async function loadHistory() {
+        const roomCode = getRoomCode();
+
+        if (!roomCode) {
+            log('Load history error: roomCode is empty');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/chat/rooms/${roomCode}/messages`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': 'Bearer ' + getToken()
+                }
+            });
+
+            if (!response.ok) {
+                const text = await response.text();
+                log(`Load history error: ${response.status} ${text}`);
+                return;
+            }
+
+            const data = await response.json();
+            renderMessages(data);
+            log('History loaded');
+        } catch (e) {
+            log('Load history exception: ' + e);
+        }
+    }
+
+    function connect() {
+        const token = getToken();
+        const roomCode = getRoomCode();
+
+        if (!token) {
+            log('Connect error: token is empty');
+            return;
+        }
+
+        if (!roomCode) {
+            log('Connect error: roomCode is empty');
+            return;
+        }
+
+        const socket = new SockJS('/ws');
+        stompClient = Stomp.over(socket);
+
+        stompClient.debug = null;
+
+        stompClient.connect(
+            { Authorization: 'Bearer ' + token },
+            function (frame) {
+                log('Connected: ' + frame);
+
+                stompClient.subscribe('/topic/rooms/' + roomCode + '/chat', function (message) {
+                    const body = safeJsonParse(message.body);
+                    log('WS received: ' + JSON.stringify(body, null, 2));
+                    loadHistory();
+                });
+
+                loadHistory();
+            },
+            function (error) {
+                log('Connection error: ' + error);
+            }
+        );
+    }
+
+    function disconnect() {
+        if (stompClient) {
+            stompClient.disconnect(() => {
+                log('Disconnected');
+            });
+            stompClient = null;
+        } else {
+            log('Disconnect: no active client');
+        }
+    }
+
+    function sendMessage() {
+        const roomCode = getRoomCode();
+        const content = document.getElementById('message').value.trim();
+        const replyToMessageIdRaw = document.getElementById('replyToMessageId').value.trim();
+
+        if (!stompClient || !stompClient.connected) {
+            log('Send error: not connected');
+            return;
+        }
+
+        if (!content) {
+            log('Send error: message is empty');
+            return;
+        }
+
+        const payload = {
+            roomCode: roomCode,
+            content: content
+        };
+
+        if (replyToMessageIdRaw) {
+            payload.replyToMessageId = Number(replyToMessageIdRaw);
+        }
+
+        stompClient.send('/app/chat.send', {}, JSON.stringify(payload));
+        log('Sent: ' + JSON.stringify(payload));
+    }
+
+    async function editMessage() {
+        const messageId = document.getElementById('editMessageId').value.trim();
+        const content = document.getElementById('editContent').value.trim();
+
+        if (!messageId) {
+            log('Edit error: messageId is empty');
+            return;
+        }
+
+        if (!content) {
+            log('Edit error: new content is empty');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/chat/messages/${messageId}`, {
+                method: 'PATCH',
+                headers: authHeadersJson(),
+                body: JSON.stringify({ content: content })
+            });
+
+            const text = await response.text();
+
+            if (!response.ok) {
+                log(`Edit error: ${response.status} ${text}`);
+                return;
+            }
+
+            log('Edit success: ' + text);
+            loadHistory();
+        } catch (e) {
+            log('Edit exception: ' + e);
+        }
+    }
+
+    async function deleteMessage() {
+        const messageId = document.getElementById('deleteMessageId').value.trim();
+
+        if (!messageId) {
+            log('Delete error: messageId is empty');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/chat/messages/${messageId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': 'Bearer ' + getToken()
+                }
+            });
+
+            const text = await response.text();
+
+            if (!response.ok) {
+                log(`Delete error: ${response.status} ${text}`);
+                return;
+            }
+
+            log('Delete success: ' + (text || '204 No Content'));
+            loadHistory();
+        } catch (e) {
+            log('Delete exception: ' + e);
+        }
+    }
+
+    async function addReaction() {
+        const messageId = document.getElementById('reactionMessageId').value.trim();
+        const reactionType = document.getElementById('reactionType').value.trim();
+
+        if (!messageId) {
+            log('Add reaction error: messageId is empty');
+            return;
+        }
+
+        if (!reactionType) {
+            log('Add reaction error: reactionType is empty');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/chat/messages/${messageId}/reactions`, {
+                method: 'POST',
+                headers: authHeadersJson(),
+                body: JSON.stringify({ reactionType: reactionType })
+            });
+
+            const text = await response.text();
+
+            if (!response.ok) {
+                log(`Add reaction error: ${response.status} ${text}`);
+                return;
+            }
+
+            log('Add reaction success: ' + text);
+            loadHistory();
+        } catch (e) {
+            log('Add reaction exception: ' + e);
+        }
+    }
+
+    async function removeReaction() {
+        const messageId = document.getElementById('reactionMessageId').value.trim();
+        const reactionType = document.getElementById('reactionType').value.trim();
+
+        if (!messageId) {
+            log('Remove reaction error: messageId is empty');
+            return;
+        }
+
+        if (!reactionType) {
+            log('Remove reaction error: reactionType is empty');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/chat/messages/${messageId}/reactions`, {
+                method: 'DELETE',
+                headers: authHeadersJson(),
+                body: JSON.stringify({ reactionType: reactionType })
+            });
+
+            const text = await response.text();
+
+            if (!response.ok) {
+                log(`Remove reaction error: ${response.status} ${text}`);
+                return;
+            }
+
+            log('Remove reaction success: ' + text);
+            loadHistory();
+        } catch (e) {
+            log('Remove reaction exception: ' + e);
+        }
+    }
+</script>
+
+</body>
+</html>

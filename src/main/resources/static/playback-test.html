@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Playback Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+</head>
+<body>
+<input id="token" placeholder="Bearer token" style="width:500px;">
+<input id="roomCode" placeholder="Room code">
+<input id="mediaId" placeholder="Media ID" value="1">
+<input id="position" placeholder="Position seconds" value="0">
+<input id="speed" placeholder="Speed" value="1.00">
+
+<button onclick="connect()">Connect</button>
+<button onclick="play()">Play</button>
+<button onclick="pause()">Pause</button>
+<button onclick="seek()">Seek</button>
+<button onclick="stopPlayback()">Stop</button>
+<button onclick="changeSpeed()">Speed</button>
+<button onclick="syncPlayback()">Sync</button>
+
+<pre id="log"></pre>
+
+<script>
+    let stompClient = null;
+
+    function log(text) {
+        document.getElementById('log').textContent += text + '\n';
+    }
+
+    function connect() {
+        const token = document.getElementById('token').value;
+        const roomCode = document.getElementById('roomCode').value;
+
+        const socket = new SockJS('http://localhost:8080/ws');
+        stompClient = Stomp.over(socket);
+
+        stompClient.connect(
+            { Authorization: 'Bearer ' + token },
+            function(frame) {
+                log('Connected: ' + frame);
+
+                stompClient.subscribe('/topic/rooms/' + roomCode + '/playback', function(message) {
+                    log('Playback update: ' + message.body);
+                });
+            },
+            function(error) {
+                log('Connection error: ' + error);
+            }
+        );
+    }
+
+    function sendAction(action) {
+        const roomCode = document.getElementById('roomCode').value;
+        const mediaId = Number(document.getElementById('mediaId').value);
+        const position = Number(document.getElementById('position').value);
+        const speed = document.getElementById('speed').value;
+
+        stompClient.send('/app/playback.command', {}, JSON.stringify({
+            roomCode: roomCode,
+            mediaId: mediaId,
+            action: action,
+            positionSeconds: position,
+            playbackSpeed: speed
+        }));
+    }
+
+    function play() { sendAction('PLAY'); }
+    function pause() { sendAction('PAUSE'); }
+    function seek() { sendAction('SEEK'); }
+    function stopPlayback() { sendAction('STOP'); }
+    function changeSpeed() { sendAction('SPEED_CHANGE'); }
+    function syncPlayback() { sendAction('SYNC'); }
+</script>
+</body>
+</html>

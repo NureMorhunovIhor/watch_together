@@ -12,4 +12,5 @@ public interface RoomParticipantRepository extends JpaRepository<RoomParticipant
     Optional<RoomParticipant> findByRoomAndUser(WatchRoom room, User user);
     List<RoomParticipant> findAllByRoomAndJoinStatus(WatchRoom room, com.example.watch_together.room.entity.JoinStatus joinStatus);
     long countByRoomAndJoinStatus(WatchRoom room, com.example.watch_together.room.entity.JoinStatus joinStatus);
+
 }

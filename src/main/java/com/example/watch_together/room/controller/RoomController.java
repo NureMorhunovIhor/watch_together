@@ -95,4 +95,18 @@ public class RoomController {
         roomService.closeRoom(code);
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/{code}/grant-control/{userId}")
+    public ResponseEntity<Void> grantControl(@PathVariable String code,
+                                             @PathVariable Long userId) {
+        roomService.grantPlaybackControl(code, userId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{code}/revoke-control/{userId}")
+    public ResponseEntity<Void> revokeControl(@PathVariable String code,
+                                              @PathVariable Long userId) {
+        roomService.revokePlaybackControl(code, userId);
+        return ResponseEntity.ok().build();
+    }
 }

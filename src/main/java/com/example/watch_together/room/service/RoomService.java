@@ -186,7 +186,6 @@ public class RoomService {
         }
     }
     private void handleHostLeaving(WatchRoom room) {
-
         List<RoomParticipant> participants = roomParticipantRepository
                 .findAllByRoomAndJoinStatus(room, JoinStatus.JOINED);
 
@@ -265,6 +264,10 @@ public class RoomService {
 
         RoomParticipant newHost = roomParticipantRepository.findByRoomAndUser(room, newHostUser)
                 .orElseThrow(() -> new RuntimeException("User not in room"));
+
+        if (newHost.getJoinStatus() != JoinStatus.JOINED) {
+            throw new RuntimeException("New host must be an active participant");
+        }
 
         currentHost.setParticipantRole(ParticipantRole.VIEWER);
         currentHost.setCanControlPlayback(false);
@@ -412,5 +415,35 @@ public class RoomService {
 
         room.setIsActive(false);
         room.setEndedAt(LocalDateTime.now());
+    }
+    @Transactional
+    public void grantPlaybackControl(String code, Long userId) {
+        WatchRoom room = getRoomByCode(code);
+        User host = getCurrentUser();
+
+        getHostParticipant(room, host);
+
+        User targetUser = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        RoomParticipant target = roomParticipantRepository.findByRoomAndUser(room, targetUser)
+                .orElseThrow(() -> new RuntimeException("User not in room"));
+
+        target.setCanControlPlayback(true);
+    }
+    @Transactional
+    public void revokePlaybackControl(String code, Long userId) {
+        WatchRoom room = getRoomByCode(code);
+        User host = getCurrentUser();
+
+        getHostParticipant(room, host);
+
+        User targetUser = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        RoomParticipant target = roomParticipantRepository.findByRoomAndUser(room, targetUser)
+                .orElseThrow(() -> new RuntimeException("User not in room"));
+
+        target.setCanControlPlayback(false);
     }
 }

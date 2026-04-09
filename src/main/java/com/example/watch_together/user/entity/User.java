@@ -36,6 +36,15 @@ public class User {
     @Column(name = "avatar_url", length = 500)
     private String avatarUrl;
 
+    @Column(name = "two_factor_enabled", nullable = false)
+    private Boolean twoFactorEnabled = false;
+
+    @Column(name = "two_factor_secret", length = 64)
+    private String twoFactorSecret;
+
+    @Column(name = "two_factor_verified_at")
+    private LocalDateTime twoFactorVerifiedAt;
+
     @Column(length = 500)
     private String bio;
 

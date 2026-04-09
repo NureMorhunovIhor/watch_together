@@ -32,7 +32,10 @@ public class SecurityConfig {
                                 "/api/auth/logout"
                         ).permitAll()
                         .requestMatchers("/ws/**").permitAll()
-                        .requestMatchers("/chat-test.html").permitAll()
+                        .requestMatchers(
+                                "/chat-test.html",
+                                "/room-test.html"
+                        ).permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

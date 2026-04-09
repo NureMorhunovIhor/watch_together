@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WatchTogether Room Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f4f4f4;
+        }
+
+        .page {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 16px;
+            padding: 16px;
+        }
+
+        .left, .right {
+            background: white;
+            border-radius: 10px;
+            padding: 16px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        }
+
+        h2, h3 {
+            margin-top: 0;
+        }
+
+        .controls, .chat-controls, .connect-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        input, button, textarea {
+            padding: 8px;
+            font-size: 14px;
+        }
+
+        input[type="text"], input[type="number"] {
+            min-width: 180px;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        video {
+            width: 100%;
+            max-height: 500px;
+            background: black;
+            border-radius: 10px;
+        }
+
+        #chatBox, #logBox {
+            height: 220px;
+            overflow-y: auto;
+            background: #fafafa;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+        }
+
+        .msg {
+            border-bottom: 1px solid #eee;
+            padding: 6px 0;
+        }
+
+        .small {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .status-ok {
+            color: green;
+            font-weight: bold;
+        }
+
+        .status-bad {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="left">
+        <h2>WatchTogether Room Test</h2>
+
+        <div class="connect-controls">
+            <input id="token" type="text" placeholder="JWT access token" style="width: 420px;">
+            <input id="roomCode" type="text" placeholder="Room code">
+            <button onclick="connectAll()">Connect</button>
+            <button onclick="joinRoom()">Join room</button>
+            <button onclick="loadMessages()">Load messages</button>
+        </div>
+
+        <div class="connect-controls">
+            <input id="videoUrl" type="text" placeholder="Video URL (mp4)" style="width: 420px;"
+                   value="https://www.w3schools.com/html/mov_bbb.mp4">
+            <button onclick="loadVideo()">Load video</button>
+            <button onclick="fetchPlaybackState()">Load playback state</button>
+        </div>
+
+        <div class="small">
+            WebSocket status:
+            <span id="wsStatus" class="status-bad">DISCONNECTED</span>
+        </div>
+
+        <br>
+
+        <video id="videoPlayer" controls></video>
+
+        <br><br>
+
+        <div class="controls">
+            <button onclick="sendPlay()">Play</button>
+            <button onclick="sendPause()">Pause</button>
+            <button onclick="sendStop()">Stop</button>
+            <input id="seekPosition" type="number" placeholder="Seek seconds" value="0">
+            <button onclick="sendSeek()">Seek</button>
+            <input id="speedValue" type="number" step="0.25" placeholder="Speed" value="1.00">
+            <button onclick="sendSpeedChange()">Speed change</button>
+            <button onclick="sendSync()">Sync</button>
+        </div>
+
+        <h3>Playback Log</h3>
+        <div id="logBox"></div>
+    </div>
+
+    <div class="right">
+        <h3>Chat</h3>
+
+        <div class="chat-controls">
+            <input id="chatMessage" type="text" placeholder="Type message..." style="width: 260px;">
+            <button onclick="sendChatMessage()">Send</button>
+        </div>
+
+        <div id="chatBox"></div>
+    </div>
+</div>
+
+<script>
+    let stompClient = null;
+    let video = null;
+    let suppressLocalPlaybackEvents = false;
+    let lastKnownRoomCode = null;
+    let currentToken = null;
+
+    window.onload = function () {
+        video = document.getElementById('videoPlayer');
+
+        video.addEventListener('play', () => {
+            if (suppressLocalPlaybackEvents) return;
+            log('Local event: play');
+            sendPlaybackCommand('PLAY', Math.floor(video.currentTime));
+        });
+
+        video.addEventListener('pause', () => {
+            if (suppressLocalPlaybackEvents) return;
+            if (video.ended) return;
+            log('Local event: pause');
+            sendPlaybackCommand('PAUSE', Math.floor(video.currentTime));
+        });
+
+        video.addEventListener('seeked', () => {
+            if (suppressLocalPlaybackEvents) return;
+            log('Local event: seeked to ' + Math.floor(video.currentTime));
+            sendPlaybackCommand('SEEK', Math.floor(video.currentTime));
+        });
+
+        video.addEventListener('ratechange', () => {
+            if (suppressLocalPlaybackEvents) return;
+            log('Local event: ratechange to ' + video.playbackRate);
+            sendPlaybackCommand('SPEED_CHANGE', Math.floor(video.currentTime), video.playbackRate);
+        });
+    };
+
+    function connectAll() {
+        currentToken = document.getElementById('token').value.trim();
+        lastKnownRoomCode = document.getElementById('roomCode').value.trim();
+
+        if (!currentToken) {
+            alert('Insert token');
+            return;
+        }
+
+        if (!lastKnownRoomCode) {
+            alert('Insert room code');
+            return;
+        }
+
+        const socket = new SockJS('/ws');
+        stompClient = Stomp.over(socket);
+
+        stompClient.debug = null;
+
+        stompClient.connect(
+            { Authorization: 'Bearer ' + currentToken },
+            function (frame) {
+                setWsStatus(true);
+                log('Connected to WebSocket');
+
+                stompClient.subscribe('/topic/rooms/' + lastKnownRoomCode + '/chat', function (message) {
+                    const msg = JSON.parse(message.body);
+                    appendChatMessage(msg);
+                });
+
+                stompClient.subscribe('/topic/rooms/' + lastKnownRoomCode + '/playback', function (message) {
+                    const state = JSON.parse(message.body);
+                    log('Playback update: ' + JSON.stringify(state));
+                    applyPlaybackState(state);
+                });
+            },
+            function (error) {
+                setWsStatus(false);
+                log('WebSocket error: ' + error);
+            }
+        );
+    }
+
+    function setWsStatus(connected) {
+        const el = document.getElementById('wsStatus');
+        el.textContent = connected ? 'CONNECTED' : 'DISCONNECTED';
+        el.className = connected ? 'status-ok' : 'status-bad';
+    }
+
+    function joinRoom() {
+        const roomCode = document.getElementById('roomCode').value.trim();
+        const token = document.getElementById('token').value.trim();
+
+        fetch('/api/rooms/' + encodeURIComponent(roomCode) + '/join', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        })
+            .then(handleJsonOrEmpty)
+            .then(data => {
+                log('Joined room successfully');
+            })
+            .catch(err => {
+                log('Join error: ' + err);
+            });
+    }
+
+    function loadVideo() {
+        const url = document.getElementById('videoUrl').value.trim();
+        if (!url) {
+            alert('Insert video URL');
+            return;
+        }
+        video.src = url;
+        video.load();
+        log('Video loaded: ' + url);
+    }
+
+    function loadMessages() {
+        const roomCode = document.getElementById('roomCode').value.trim();
+        const token = document.getElementById('token').value.trim();
+
+        fetch('/api/chat/rooms/' + encodeURIComponent(roomCode) + '/messages', {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        })
+            .then(r => r.json())
+            .then(messages => {
+                clearChat();
+                messages.forEach(m => appendChatMessage(m));
+                log('Loaded ' + messages.length + ' chat messages');
+            })
+            .catch(err => {
+                log('Load messages error: ' + err);
+            });
+    }
+
+    function sendChatMessage() {
+        const roomCode = document.getElementById('roomCode').value.trim();
+        const content = document.getElementById('chatMessage').value.trim();
+
+        if (!stompClient || !stompClient.connected) {
+            alert('WebSocket not connected');
+            return;
+        }
+
+        if (!content) return;
+
+        stompClient.send('/app/chat.send', {}, JSON.stringify({
+            roomCode: roomCode,
+            content: content
+        }));
+
+        document.getElementById('chatMessage').value = '';
+    }
+
+    function sendPlay() {
+        video.play().catch(err => log('Play error: ' + err));
+    }
+
+    function sendPause() {
+        video.pause();
+    }
+
+    function sendStop() {
+        sendPlaybackCommand('STOP', 0);
+    }
+
+    function sendSeek() {
+        const position = Number(document.getElementById('seekPosition').value);
+        sendPlaybackCommand('SEEK', position);
+    }
+
+    function sendSpeedChange() {
+        const speed = Number(document.getElementById('speedValue').value);
+        sendPlaybackCommand('SPEED_CHANGE', Math.floor(video.currentTime), speed);
+    }
+
+    function sendSync() {
+        sendPlaybackCommand('SYNC', Math.floor(video.currentTime), video.playbackRate);
+    }
+
+    function sendPlaybackCommand(action, positionSeconds = null, playbackSpeed = null) {
+        const roomCode = document.getElementById('roomCode').value.trim();
+
+        if (!stompClient || !stompClient.connected) {
+            alert('WebSocket not connected');
+            return;
+        }
+
+        const payload = {
+            roomCode: roomCode,
+            mediaId: 1,
+            action: action
+        };
+
+        if (positionSeconds !== null) {
+            payload.positionSeconds = positionSeconds;
+        }
+
+        if (playbackSpeed !== null) {
+            payload.playbackSpeed = playbackSpeed;
+        }
+
+        stompClient.send('/app/playback.command', {}, JSON.stringify(payload));
+        log('Sent playback command: ' + JSON.stringify(payload));
+    }
+
+    function fetchPlaybackState() {
+        const roomCode = document.getElementById('roomCode').value.trim();
+        const token = document.getElementById('token').value.trim();
+
+        fetch('/api/playback/rooms/' + encodeURIComponent(roomCode) + '/state', {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        })
+            .then(r => r.json())
+            .then(state => {
+                log('Loaded playback state: ' + JSON.stringify(state));
+                applyPlaybackState(state);
+            })
+            .catch(err => {
+                log('Load playback state error: ' + err);
+            });
+    }
+
+    function applyPlaybackState(state) {
+        suppressLocalPlaybackEvents = true;
+
+        try {
+            if (typeof state.currentPositionSeconds === 'number') {
+                const delta = Math.abs(video.currentTime - state.currentPositionSeconds);
+                if (delta > 1) {
+                    video.currentTime = state.currentPositionSeconds;
+                }
+            }
+
+            if (state.playbackSpeed) {
+                video.playbackRate = Number(state.playbackSpeed);
+                document.getElementById('speedValue').value = state.playbackSpeed;
+            }
+
+            if (state.playbackStatus === 'PLAYING') {
+                video.play().catch(err => log('Remote play error: ' + err));
+            } else if (state.playbackStatus === 'PAUSED') {
+                video.pause();
+            } else if (state.playbackStatus === 'STOPPED') {
+                video.pause();
+                video.currentTime = 0;
+            }
+        } finally {
+            setTimeout(() => {
+                suppressLocalPlaybackEvents = false;
+            }, 300);
+        }
+    }
+
+    function appendChatMessage(msg) {
+        const box = document.getElementById('chatBox');
+        const div = document.createElement('div');
+        div.className = 'msg';
+
+        const sender = msg.senderDisplayName || msg.senderUsername || 'unknown';
+        const time = msg.sentAt || '';
+        const content = msg.content || '';
+
+        div.innerHTML = '<strong>' + escapeHtml(sender) + '</strong> ' +
+            '<span class="small">' + escapeHtml(String(time)) + '</span><br>' +
+            escapeHtml(content);
+
+        box.appendChild(div);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function clearChat() {
+        document.getElementById('chatBox').innerHTML = '';
+    }
+
+    function log(text) {
+        const box = document.getElementById('logBox');
+        box.textContent += text + '\n';
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function escapeHtml(value) {
+        return String(value)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    async function handleJsonOrEmpty(response) {
+        const text = await response.text();
+
+        if (!response.ok) {
+            throw text || ('HTTP ' + response.status);
+        }
+
+        if (!text) return null;
+
+        try {
+            return JSON.parse(text);
+        } catch {
+            return text;
+        }
+    }
+</script>
+</body>
+</html>

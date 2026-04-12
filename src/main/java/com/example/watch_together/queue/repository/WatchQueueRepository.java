@@ -4,6 +4,8 @@ import com.example.watch_together.queue.entity.QueueStatus;
 import com.example.watch_together.queue.entity.WatchQueueItem;
 import com.example.watch_together.room.entity.WatchRoom;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -18,7 +20,6 @@ public interface WatchQueueRepository extends JpaRepository<WatchQueueItem, Long
 
     Optional<WatchQueueItem> findFirstByRoomAndStatusOrderByQueueOrderAsc(WatchRoom room, QueueStatus status);
 
-    int countByRoom(WatchRoom room);
-
-    boolean existsByRoomAndMediaIdAndStatus(WatchRoom room, Long mediaId, QueueStatus status);
+    @Query("select coalesce(max(w.queueOrder), 0) from WatchQueueItem w where w.room = :room")
+    Integer findMaxQueueOrderByRoom(@Param("room") WatchRoom room);
 }

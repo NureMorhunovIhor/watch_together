@@ -31,24 +31,16 @@
             margin-top: 0;
         }
 
-        .controls, .chat-controls, .connect-controls {
+        .controls, .chat-controls, .connect-controls, .queue-controls {
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
             margin-bottom: 12px;
         }
 
-        input, button, textarea {
+        input, button {
             padding: 8px;
             font-size: 14px;
-        }
-
-        input[type="text"], input[type="number"] {
-            min-width: 180px;
-        }
-
-        button {
-            cursor: pointer;
         }
 
         video {
@@ -58,8 +50,9 @@
             border-radius: 10px;
         }
 
-        #chatBox, #logBox {
-            height: 220px;
+        #chatBox, #logBox, #queueBox {
+            min-height: 180px;
+            max-height: 260px;
             overflow-y: auto;
             background: #fafafa;
             border: 1px solid #ddd;
@@ -68,9 +61,9 @@
             white-space: pre-wrap;
         }
 
-        .msg {
+        .msg, .queue-item {
             border-bottom: 1px solid #eee;
-            padding: 6px 0;
+            padding: 8px 0;
         }
 
         .small {
@@ -87,6 +80,38 @@
             color: red;
             font-weight: bold;
         }
+
+        .queue-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        .pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 12px;
+            background: #eaeaea;
+            margin-left: 6px;
+        }
+
+        .playing {
+            background: #d9f7d9;
+        }
+
+        .queued {
+            background: #e8f0ff;
+        }
+
+        .played {
+            background: #f0f0f0;
+        }
+
+        .removed {
+            background: #ffe3e3;
+        }
     </style>
 </head>
 <body>
@@ -100,12 +125,12 @@
             <button onclick="connectAll()">Connect</button>
             <button onclick="joinRoom()">Join room</button>
             <button onclick="loadMessages()">Load messages</button>
+            <button onclick="loadQueue()">Load queue</button>
         </div>
 
         <div class="connect-controls">
-            <input id="videoUrl" type="text" placeholder="Video URL (mp4)" style="width: 420px;"
-                   value="https://www.w3schools.com/html/mov_bbb.mp4">
-            <button onclick="loadVideo()">Load video</button>
+            <input id="videoUrl" type="text" placeholder="Manual video URL (optional)" style="width: 420px;" value="">
+            <button onclick="loadManualVideo()">Load manual video</button>
             <button onclick="fetchPlaybackState()">Load playback state</button>
         </div>
 
@@ -136,6 +161,18 @@
     </div>
 
     <div class="right">
+        <h3>Queue</h3>
+
+        <div class="queue-controls">
+            <input id="queueMediaId" type="number" placeholder="Media ID">
+            <button onclick="addToQueue()">Add to queue</button>
+            <button onclick="playNext()">Play next</button>
+        </div>
+
+        <div id="queueBox"></div>
+
+        <br>
+
         <h3>Chat</h3>
 
         <div class="chat-controls">
@@ -151,8 +188,7 @@
     let stompClient = null;
     let video = null;
     let suppressLocalPlaybackEvents = false;
-    let lastKnownRoomCode = null;
-    let currentToken = null;
+    let currentQueue = [];
 
     window.onload = function () {
         video = document.getElementById('videoPlayer');
@@ -181,43 +217,73 @@
             log('Local event: ratechange to ' + video.playbackRate);
             sendPlaybackCommand('SPEED_CHANGE', Math.floor(video.currentTime), video.playbackRate);
         });
+
+        video.addEventListener('ended', () => {
+            if (suppressLocalPlaybackEvents) return;
+            log('Video ended, trying play next...');
+            playNext();
+        });
     };
 
+    function getRoomCode() {
+        return document.getElementById('roomCode').value.trim();
+    }
+
+    function getToken() {
+        return document.getElementById('token').value.trim();
+    }
+
     function connectAll() {
-        currentToken = document.getElementById('token').value.trim();
-        lastKnownRoomCode = document.getElementById('roomCode').value.trim();
+        const currentToken = getToken();
+        const roomCode = getRoomCode();
 
         if (!currentToken) {
             alert('Insert token');
             return;
         }
 
-        if (!lastKnownRoomCode) {
+        if (!roomCode) {
             alert('Insert room code');
             return;
         }
 
         const socket = new SockJS('/ws');
         stompClient = Stomp.over(socket);
-
         stompClient.debug = null;
 
         stompClient.connect(
             { Authorization: 'Bearer ' + currentToken },
-            function (frame) {
+            async function () {
                 setWsStatus(true);
                 log('Connected to WebSocket');
 
-                stompClient.subscribe('/topic/rooms/' + lastKnownRoomCode + '/chat', function (message) {
+                stompClient.subscribe('/topic/rooms/' + roomCode + '/chat', function (message) {
                     const msg = JSON.parse(message.body);
                     appendChatMessage(msg);
                 });
 
-                stompClient.subscribe('/topic/rooms/' + lastKnownRoomCode + '/playback', function (message) {
+                stompClient.subscribe('/topic/rooms/' + roomCode + '/playback', function (message) {
                     const state = JSON.parse(message.body);
                     log('Playback update: ' + JSON.stringify(state));
                     applyPlaybackState(state);
                 });
+
+                stompClient.subscribe('/topic/rooms/' + roomCode + '/queue', function (message) {
+                    const queue = JSON.parse(message.body);
+                    currentQueue = queue;
+                    renderQueue(queue);
+                    log('Queue update received');
+                    autoLoadPlayingMediaFromQueue(queue);
+                });
+
+                await loadQueue();
+                await loadMessages();
+
+                try {
+                    await fetchPlaybackState();
+                } catch (e) {
+                    log('Playback state not loaded yet');
+                }
             },
             function (error) {
                 setWsStatus(false);
@@ -232,59 +298,52 @@
         el.className = connected ? 'status-ok' : 'status-bad';
     }
 
-    function joinRoom() {
-        const roomCode = document.getElementById('roomCode').value.trim();
-        const token = document.getElementById('token').value.trim();
+    async function joinRoom() {
+        const roomCode = getRoomCode();
+        const token = getToken();
 
-        fetch('/api/rooms/' + encodeURIComponent(roomCode) + '/join', {
-            method: 'POST',
-            headers: {
-                'Authorization': 'Bearer ' + token
-            }
-        })
-            .then(handleJsonOrEmpty)
-            .then(data => {
-                log('Joined room successfully');
-            })
-            .catch(err => {
-                log('Join error: ' + err);
+        try {
+            await fetchJson('/api/rooms/' + encodeURIComponent(roomCode) + '/join', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + token
+                }
             });
+
+            log('Joined room successfully');
+        } catch (err) {
+            log('Join error: ' + err);
+        }
     }
 
-    function loadVideo() {
+    function loadManualVideo() {
         const url = document.getElementById('videoUrl').value.trim();
         if (!url) {
             alert('Insert video URL');
             return;
         }
-        video.src = url;
-        video.load();
-        log('Video loaded: ' + url);
+        setVideoSource(url);
+        log('Manual video loaded: ' + url);
     }
 
-    function loadMessages() {
-        const roomCode = document.getElementById('roomCode').value.trim();
-        const token = document.getElementById('token').value.trim();
+    async function loadMessages() {
+        const roomCode = getRoomCode();
+        const token = getToken();
 
-        fetch('/api/chat/rooms/' + encodeURIComponent(roomCode) + '/messages', {
+        const messages = await fetchJson('/api/chat/rooms/' + encodeURIComponent(roomCode) + '/messages', {
             method: 'GET',
             headers: {
                 'Authorization': 'Bearer ' + token
             }
-        })
-            .then(r => r.json())
-            .then(messages => {
-                clearChat();
-                messages.forEach(m => appendChatMessage(m));
-                log('Loaded ' + messages.length + ' chat messages');
-            })
-            .catch(err => {
-                log('Load messages error: ' + err);
-            });
+        });
+
+        clearChat();
+        messages.forEach(m => appendChatMessage(m));
+        log('Loaded ' + messages.length + ' chat messages');
     }
 
     function sendChatMessage() {
-        const roomCode = document.getElementById('roomCode').value.trim();
+        const roomCode = getRoomCode();
         const content = document.getElementById('chatMessage').value.trim();
 
         if (!stompClient || !stompClient.connected) {
@@ -329,16 +388,19 @@
     }
 
     function sendPlaybackCommand(action, positionSeconds = null, playbackSpeed = null) {
-        const roomCode = document.getElementById('roomCode').value.trim();
+        const roomCode = getRoomCode();
 
         if (!stompClient || !stompClient.connected) {
             alert('WebSocket not connected');
             return;
         }
 
+        const playingItem = currentQueue.find(i => i.status === 'PLAYING');
+        const mediaId = playingItem ? playingItem.mediaId : 1;
+
         const payload = {
             roomCode: roomCode,
-            mediaId: 1,
+            mediaId: mediaId,
             action: action
         };
 
@@ -354,24 +416,19 @@
         log('Sent playback command: ' + JSON.stringify(payload));
     }
 
-    function fetchPlaybackState() {
-        const roomCode = document.getElementById('roomCode').value.trim();
-        const token = document.getElementById('token').value.trim();
+    async function fetchPlaybackState() {
+        const roomCode = getRoomCode();
+        const token = getToken();
 
-        fetch('/api/playback/rooms/' + encodeURIComponent(roomCode) + '/state', {
+        const state = await fetchJson('/api/playback/rooms/' + encodeURIComponent(roomCode) + '/state', {
             method: 'GET',
             headers: {
                 'Authorization': 'Bearer ' + token
             }
-        })
-            .then(r => r.json())
-            .then(state => {
-                log('Loaded playback state: ' + JSON.stringify(state));
-                applyPlaybackState(state);
-            })
-            .catch(err => {
-                log('Load playback state error: ' + err);
-            });
+        });
+
+        log('Loaded playback state: ' + JSON.stringify(state));
+        applyPlaybackState(state);
     }
 
     function applyPlaybackState(state) {
@@ -403,6 +460,192 @@
                 suppressLocalPlaybackEvents = false;
             }, 300);
         }
+    }
+
+    async function addToQueue() {
+        const roomCode = getRoomCode();
+        const token = getToken();
+        const mediaId = Number(document.getElementById('queueMediaId').value);
+
+        if (!mediaId) {
+            alert('Insert media ID');
+            return;
+        }
+
+        const item = await fetchJson('/api/rooms/' + encodeURIComponent(roomCode) + '/queue', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ mediaId })
+        });
+
+        log('Added to queue: ' + JSON.stringify(item));
+    }
+
+    async function loadQueue() {
+        const roomCode = getRoomCode();
+        const token = getToken();
+
+        const queue = await fetchJson('/api/rooms/' + encodeURIComponent(roomCode) + '/queue', {
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        });
+
+        currentQueue = queue;
+        renderQueue(queue);
+        autoLoadPlayingMediaFromQueue(queue);
+        log('Loaded queue: ' + queue.length + ' items');
+    }
+
+    async function playQueueItem(queueItemId) {
+        const roomCode = getRoomCode();
+        const token = getToken();
+
+        const item = await fetchJson('/api/rooms/' + encodeURIComponent(roomCode) + '/queue/' + queueItemId + '/play', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        });
+
+        log('Now playing queue item: ' + JSON.stringify(item));
+
+        if (item.sourceUrl) {
+            setVideoSource(item.sourceUrl);
+        }
+
+        await loadQueue();
+        await fetchPlaybackState();
+    }
+
+    async function playNext() {
+        const roomCode = getRoomCode();
+        const token = getToken();
+
+        const item = await fetchJson('/api/rooms/' + encodeURIComponent(roomCode) + '/queue/next', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        });
+
+        log('Played next item: ' + JSON.stringify(item));
+
+        if (item.sourceUrl) {
+            setVideoSource(item.sourceUrl);
+        }
+
+        await loadQueue();
+        await fetchPlaybackState();
+    }
+
+    async function removeQueueItem(queueItemId) {
+        const roomCode = getRoomCode();
+        const token = getToken();
+
+        await fetchJson('/api/rooms/' + encodeURIComponent(roomCode) + '/queue/' + queueItemId, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        });
+
+        log('Removed queue item: ' + queueItemId);
+        await loadQueue();
+    }
+
+    async function moveQueueItem(queueItemId, newOrder) {
+        const roomCode = getRoomCode();
+        const token = getToken();
+
+        const items = await fetchJson('/api/rooms/' + encodeURIComponent(roomCode) + '/queue/' + queueItemId + '/move', {
+            method: 'PATCH',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ newOrder })
+        });
+
+        currentQueue = items;
+        renderQueue(items);
+        autoLoadPlayingMediaFromQueue(items);
+        log('Moved queue item ' + queueItemId + ' to order ' + newOrder);
+    }
+
+    function renderQueue(queue) {
+        const box = document.getElementById('queueBox');
+        box.innerHTML = '';
+
+        if (!queue.length) {
+            box.textContent = 'Queue is empty';
+            return;
+        }
+
+        queue.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'queue-item';
+
+            let statusClass = '';
+            if (item.status === 'PLAYING') statusClass = 'playing';
+            if (item.status === 'QUEUED') statusClass = 'queued';
+            if (item.status === 'PLAYED') statusClass = 'played';
+            if (item.status === 'REMOVED') statusClass = 'removed';
+
+            div.innerHTML = `
+                <strong>#${item.queueOrder} ${escapeHtml(item.mediaTitle || ('Media ' + item.mediaId))}</strong>
+                <span class="pill ${statusClass}">${escapeHtml(item.status)}</span>
+                <div class="small">mediaId=${item.mediaId} | addedBy=${escapeHtml(item.addedByUsername || 'unknown')}</div>
+                <div class="small">${escapeHtml(item.sourceUrl || '')}</div>
+                <div class="queue-actions">
+                    <button onclick="playQueueItem(${item.queueItemId})">Play</button>
+                    <button onclick="removeQueueItem(${item.queueItemId})">Remove</button>
+                    <button onclick="promptMove(${item.queueItemId})">Move</button>
+                </div>
+            `;
+
+            box.appendChild(div);
+        });
+    }
+
+    function promptMove(queueItemId) {
+        const newOrder = prompt('Enter new order:');
+        if (!newOrder) return;
+        moveQueueItem(queueItemId, Number(newOrder));
+    }
+
+    function autoLoadPlayingMediaFromQueue(queue) {
+        const playingItem = queue.find(i => i.status === 'PLAYING');
+
+        if (!playingItem || !playingItem.sourceUrl) {
+            return;
+        }
+
+        const currentSrc = video.currentSrc || video.src || '';
+        const newSrc = playingItem.sourceUrl;
+
+        if (!currentSrc || !currentSrc.includes(newSrc)) {
+            suppressLocalPlaybackEvents = true;
+            setVideoSource(newSrc);
+
+            setTimeout(() => {
+                suppressLocalPlaybackEvents = false;
+            }, 300);
+
+            log('Auto-loaded media from queue: ' + newSrc);
+        }
+    }
+
+    function setVideoSource(url) {
+        if (!url) return;
+        video.src = url;
+        video.load();
+        document.getElementById('videoUrl').value = url;
+        log('Video source set: ' + url);
     }
 
     function appendChatMessage(msg) {
@@ -441,7 +684,8 @@
             .replaceAll("'", '&#039;');
     }
 
-    async function handleJsonOrEmpty(response) {
+    async function fetchJson(url, options) {
+        const response = await fetch(url, options);
         const text = await response.text();
 
         if (!response.ok) {

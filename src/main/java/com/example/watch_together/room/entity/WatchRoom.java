@@ -57,4 +57,7 @@ public class WatchRoom {
 
     @Column(name = "updated_at", insertable = false, updatable = false)
     private LocalDateTime updatedAt;
+
+    @Column(name = "current_media_id")
+    private Long currentMediaId;
 }

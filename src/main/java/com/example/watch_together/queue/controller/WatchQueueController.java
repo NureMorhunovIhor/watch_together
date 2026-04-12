@@ -1,5 +1,6 @@
 package com.example.watch_together.queue.controller;
 
+import com.example.watch_together.media.dto.ExternalQueueMediaRequest;
 import com.example.watch_together.queue.dto.AddToQueueRequest;
 import com.example.watch_together.queue.dto.MoveQueueItemRequest;
 import com.example.watch_together.queue.dto.QueueItemResponse;
@@ -58,5 +59,12 @@ public class WatchQueueController {
                                                                  @RequestBody MoveQueueItemRequest request,
                                                                  Principal principal) {
         return ResponseEntity.ok(watchQueueService.moveQueueItem(roomCode, queueItemId, request, principal));
+    }
+
+    @PostMapping("/external")
+    public ResponseEntity<QueueItemResponse> addExternalMediaToQueue(@PathVariable String roomCode,
+                                                                     @RequestBody ExternalQueueMediaRequest request,
+                                                                     Principal principal) {
+        return ResponseEntity.ok(watchQueueService.addExternalMediaToQueue(roomCode, request, principal));
     }
 }

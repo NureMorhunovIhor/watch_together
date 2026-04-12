@@ -1,5 +1,6 @@
 package com.example.watch_together.queue.service;
 
+import com.example.watch_together.media.dto.ExternalQueueMediaRequest;
 import com.example.watch_together.media.entity.MediaItem;
 import com.example.watch_together.media.repository.MediaItemRepository;
 import com.example.watch_together.playback.entity.PlaybackState;
@@ -315,6 +316,58 @@ public class WatchQueueService {
                 && participant.getParticipantRole().name().equals("VIEWER")) {
             throw new RuntimeException("You cannot manage queue in this room");
         }
+    }
+
+    @Transactional
+    public QueueItemResponse addExternalMediaToQueue(String roomCode,
+                                                     ExternalQueueMediaRequest request,
+                                                     Principal principal) {
+        WatchRoom room = getActiveRoomByCode(roomCode);
+        User user = getUserByPrincipal(principal);
+
+        validateRoomMembership(room, user);
+
+        if (request.getTitle() == null || request.getTitle().isBlank()) {
+            throw new RuntimeException("Title is required");
+        }
+        if (request.getMediaType() == null || request.getMediaType().isBlank()) {
+            throw new RuntimeException("Media type is required");
+        }
+        if (request.getSourceType() == null || request.getSourceType().isBlank()) {
+            throw new RuntimeException("Source type is required");
+        }
+        if (request.getSourceUrl() == null || request.getSourceUrl().isBlank()) {
+            throw new RuntimeException("Source URL is required");
+        }
+
+        MediaItem media = MediaItem.builder()
+                .title(request.getTitle())
+                .description(request.getDescription())
+                .mediaType(request.getMediaType())
+                .sourceType(request.getSourceType())
+                .sourceUrl(request.getSourceUrl())
+                .thumbnailUrl(request.getThumbnailUrl())
+                .durationSeconds(request.getDurationSeconds())
+                .isPublic(false)
+                .build();
+
+        media = mediaItemRepository.save(media);
+
+        int nextOrder = getNextQueueOrder(room);
+
+        WatchQueueItem item = WatchQueueItem.builder()
+                .room(room)
+                .mediaId(media.getId())
+                .addedBy(user)
+                .queueOrder(nextOrder)
+                .status(QueueStatus.QUEUED)
+                .build();
+
+        item = watchQueueRepository.save(item);
+
+        broadcastQueue(room);
+
+        return mapItem(item, media);
     }
 
     private QueueItemResponse mapItem(WatchQueueItem item) {

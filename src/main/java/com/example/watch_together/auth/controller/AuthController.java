@@ -69,4 +69,15 @@ public class AuthController {
         authService.disableTwoFactor(principal, request);
         return ResponseEntity.ok().build();
     }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ForgotPasswordResponse> forgotPassword(@RequestBody ForgotPasswordRequest request) {
+        return ResponseEntity.ok(authService.forgotPassword(request));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(@RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request);
+        return ResponseEntity.noContent().build();
+    }
 }

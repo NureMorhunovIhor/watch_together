@@ -1,6 +1,8 @@
 package com.example.watch_together.auth.service;
 
 import com.example.watch_together.auth.dto.*;
+import com.example.watch_together.auth.entity.PasswordResetToken;
+import com.example.watch_together.auth.repository.PasswordResetTokenRepository;
 import com.example.watch_together.role.entity.Role;
 import com.example.watch_together.role.repository.RoleRepository;
 import com.example.watch_together.security.CustomUserDetails;
@@ -21,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.Set;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +35,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final TotpService totpService;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
 
     @Transactional
     public AuthResponse register(RegisterRequest request, HttpServletRequest httpRequest) {
@@ -265,5 +269,58 @@ public class AuthService {
                 .tokenType("Bearer")
                 .requiresTwoFactor(false)
                 .build();
+    }
+
+    @Transactional
+    public ForgotPasswordResponse forgotPassword(ForgotPasswordRequest request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new RuntimeException("User with this email not found"));
+
+        passwordResetTokenRepository.findAllByUserAndUsedFalse(user)
+                .forEach(token -> {
+                    token.setUsed(true);
+                    token.setUsedAt(LocalDateTime.now());
+                });
+
+        String tokenValue = UUID.randomUUID().toString();
+
+        PasswordResetToken token = PasswordResetToken.builder()
+                .user(user)
+                .token(tokenValue)
+                .expiresAt(LocalDateTime.now().plusMinutes(30))
+                .used(false)
+                .build();
+
+        passwordResetTokenRepository.save(token);
+
+        return ForgotPasswordResponse.builder()
+                .message("Password reset token created")
+                .resetToken(tokenValue)
+                .resetLink("http://localhost:8080/reset-password.html?token=" + tokenValue)
+                .build();
+    }
+
+    @Transactional
+    public void resetPassword(ResetPasswordRequest request) {
+        PasswordResetToken token = passwordResetTokenRepository.findByToken(request.getToken())
+                .orElseThrow(() -> new RuntimeException("Invalid reset token"));
+
+        if (Boolean.TRUE.equals(token.getUsed())) {
+            throw new RuntimeException("Reset token already used");
+        }
+
+        if (token.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new RuntimeException("Reset token expired");
+        }
+
+        if (request.getNewPassword() == null || request.getNewPassword().length() < 6) {
+            throw new RuntimeException("Password must be at least 6 characters");
+        }
+
+        User user = token.getUser();
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+
+        token.setUsed(true);
+        token.setUsedAt(LocalDateTime.now());
     }
 }

@@ -3,6 +3,7 @@ package com.example.watch_together.auth.service;
 import com.example.watch_together.auth.dto.*;
 import com.example.watch_together.auth.entity.PasswordResetToken;
 import com.example.watch_together.auth.repository.PasswordResetTokenRepository;
+import com.example.watch_together.config.MailProperties;
 import com.example.watch_together.role.entity.Role;
 import com.example.watch_together.role.repository.RoleRepository;
 import com.example.watch_together.security.CustomUserDetails;
@@ -36,6 +37,8 @@ public class AuthService {
     private final JwtService jwtService;
     private final TotpService totpService;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final EmailService emailService;
+    private final MailProperties mailProperties;
 
     @Transactional
     public AuthResponse register(RegisterRequest request, HttpServletRequest httpRequest) {
@@ -293,10 +296,14 @@ public class AuthService {
 
         passwordResetTokenRepository.save(token);
 
+        String resetLink = mailProperties.getFrontend().getResetPasswordUrl() + "?token=" + tokenValue;
+
+        emailService.sendPasswordResetEmail(user.getEmail(), resetLink);
+
         return ForgotPasswordResponse.builder()
-                .message("Password reset token created")
+                .message("Password reset email sent")
                 .resetToken(tokenValue)
-                .resetLink("http://localhost:8080/reset-password.html?token=" + tokenValue)
+                .resetLink(resetLink)
                 .build();
     }
 

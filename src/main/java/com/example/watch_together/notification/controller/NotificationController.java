@@ -1,6 +1,7 @@
 package com.example.watch_together.notification.controller;
 
 import com.example.watch_together.notification.dto.NotificationResponse;
+import com.example.watch_together.notification.dto.UnreadCountResponse;
 import com.example.watch_together.notification.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -21,9 +22,20 @@ public class NotificationController {
         return ResponseEntity.ok(notificationService.getMyNotifications(principal));
     }
 
+    @GetMapping("/unread-count")
+    public ResponseEntity<UnreadCountResponse> getUnreadCount(Principal principal) {
+        return ResponseEntity.ok(notificationService.getUnreadCount(principal));
+    }
+
     @PostMapping("/{notificationId}/read")
     public ResponseEntity<Void> markAsRead(@PathVariable Long notificationId, Principal principal) {
         notificationService.markAsRead(notificationId, principal);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/read-all")
+    public ResponseEntity<Void> markAllAsRead(Principal principal) {
+        notificationService.markAllAsRead(principal);
         return ResponseEntity.noContent().build();
     }
 }

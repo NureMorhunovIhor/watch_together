@@ -1,6 +1,7 @@
 package com.example.watch_together.notification.service;
 
 import com.example.watch_together.notification.dto.NotificationResponse;
+import com.example.watch_together.notification.dto.UnreadCountResponse;
 import com.example.watch_together.notification.entity.Notification;
 import com.example.watch_together.notification.entity.NotificationType;
 import com.example.watch_together.notification.repository.NotificationRepository;
@@ -51,6 +52,16 @@ public class NotificationService {
                 .toList();
     }
 
+    public UnreadCountResponse getUnreadCount(Principal principal) {
+        User user = getUserByPrincipal(principal);
+
+        long count = notificationRepository.countByUserAndIsReadFalse(user);
+
+        return UnreadCountResponse.builder()
+                .unreadCount(count)
+                .build();
+    }
+
     @Transactional
     public void markAsRead(Long notificationId, Principal principal) {
         User user = getUserByPrincipal(principal);
@@ -60,6 +71,18 @@ public class NotificationService {
 
         notification.setIsRead(true);
         notification.setReadAt(LocalDateTime.now());
+    }
+
+    @Transactional
+    public void markAllAsRead(Principal principal) {
+        User user = getUserByPrincipal(principal);
+
+        List<Notification> unread = notificationRepository.findAllByUserAndIsReadFalse(user);
+
+        for (Notification notification : unread) {
+            notification.setIsRead(true);
+            notification.setReadAt(LocalDateTime.now());
+        }
     }
 
     private User getUserByPrincipal(Principal principal) {

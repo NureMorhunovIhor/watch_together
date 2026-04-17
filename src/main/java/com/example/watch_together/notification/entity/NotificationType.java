@@ -2,8 +2,9 @@ package com.example.watch_together.notification.entity;
 
 public enum NotificationType {
     ROOM_INVITE,
-    FRIEND_REQUEST,
-    ROOM_STARTED,
-    MESSAGE,
+    INVITE_ACCEPTED,
+    HOST_TRANSFERRED,
+    QUEUE_UPDATED,
+    NOW_PLAYING,
     SYSTEM
 }

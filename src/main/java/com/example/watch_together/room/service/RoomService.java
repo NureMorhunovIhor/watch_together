@@ -1,5 +1,7 @@
 package com.example.watch_together.room.service;
 
+import com.example.watch_together.notification.entity.NotificationType;
+import com.example.watch_together.notification.service.NotificationService;
 import com.example.watch_together.room.dto.CreateRoomRequest;
 import com.example.watch_together.room.dto.ParticipantResponse;
 import com.example.watch_together.room.dto.RoomResponse;
@@ -30,7 +32,7 @@ public class RoomService {
     private final RoomSettingsRepository roomSettingsRepository;
     private final RoomParticipantRepository roomParticipantRepository;
     private final UserRepository userRepository;
-
+    private final NotificationService notificationService;
     @Transactional
     public RoomResponse createRoom(CreateRoomRequest request) {
         User owner = getCurrentUser();
@@ -271,9 +273,25 @@ public class RoomService {
 
         currentHost.setParticipantRole(ParticipantRole.VIEWER);
         currentHost.setCanControlPlayback(false);
+        notificationService.createNotification(
+                currentUser,
+                NotificationType.HOST_TRANSFERRED,
+                "Host transferred",
+                "You transferred host rights to " + newHostUser.getUsername() + " in room: " + room.getName(),
+                "ROOM",
+                room.getId()
+        );
 
         newHost.setParticipantRole(ParticipantRole.HOST);
         newHost.setCanControlPlayback(true);
+        notificationService.createNotification(
+                newHostUser,
+                NotificationType.HOST_TRANSFERRED,
+                "You are the new host",
+                "Host rights were transferred to you in room: " + room.getName(),
+                "ROOM",
+                room.getId()
+        );
     }
 
     private RoomResponse mapRoom(WatchRoom room) {
@@ -378,6 +396,14 @@ public class RoomService {
                 .build();
 
         roomParticipantRepository.save(invite);
+        notificationService.createNotification(
+                target,
+                NotificationType.ROOM_INVITE,
+                "Room invitation",
+                "You were invited to room: " + room.getName(),
+                "ROOM",
+                room.getId()
+        );
     }
 
     @Transactional
@@ -404,6 +430,14 @@ public class RoomService {
         participant.setJoinStatus(JoinStatus.JOINED);
         participant.setJoinedAt(LocalDateTime.now());
         participant.setLeftAt(null);
+        notificationService.createNotification(
+                room.getOwner(),
+                NotificationType.INVITE_ACCEPTED,
+                "Invitation accepted",
+                user.getUsername() + " joined room: " + room.getName(),
+                "ROOM",
+                room.getId()
+        );
     }
 
     @Transactional

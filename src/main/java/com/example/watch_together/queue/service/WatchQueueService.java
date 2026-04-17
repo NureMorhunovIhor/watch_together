@@ -3,6 +3,8 @@ package com.example.watch_together.queue.service;
 import com.example.watch_together.media.dto.ExternalQueueMediaRequest;
 import com.example.watch_together.media.entity.MediaItem;
 import com.example.watch_together.media.repository.MediaItemRepository;
+import com.example.watch_together.notification.entity.NotificationType;
+import com.example.watch_together.notification.service.NotificationService;
 import com.example.watch_together.playback.entity.PlaybackState;
 import com.example.watch_together.playback.entity.PlaybackStatus;
 import com.example.watch_together.playback.repository.PlaybackStateRepository;
@@ -41,6 +43,7 @@ public class WatchQueueService {
     private final WatchQueueRepository watchQueueRepository;
     private final PlaybackStateRepository playbackStateRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final NotificationService notificationService;
 
     @Transactional
     public QueueItemResponse addToQueue(String roomCode, AddToQueueRequest request, Principal principal) {
@@ -67,6 +70,16 @@ public class WatchQueueService {
                 .build();
 
         item = watchQueueRepository.save(item);
+        if (!room.getOwner().getId().equals(user.getId())) {
+            notificationService.createNotification(
+                    room.getOwner(),
+                    NotificationType.QUEUE_UPDATED,
+                    "Queue updated",
+                    user.getUsername() + " added video to queue: " + media.getTitle(),
+                    "ROOM",
+                    room.getId()
+            );
+        }
 
         broadcastQueue(room);
 
@@ -105,7 +118,6 @@ public class WatchQueueService {
             room.setCurrentMediaId(null);
         }
 
-        // Не перенумеровываем все подряд, чтобы не ловить конфликтов на уникальном индексе.
         broadcastQueue(room);
     }
 
@@ -147,6 +159,16 @@ public class WatchQueueService {
         state.setLastSyncedAt(LocalDateTime.now());
 
         playbackStateRepository.save(state);
+        for (RoomParticipant participant : roomParticipantRepository.findAllByRoomAndJoinStatus(room, JoinStatus.JOINED)) {
+            notificationService.createNotification(
+                    participant.getUser(),
+                    NotificationType.NOW_PLAYING,
+                    "Now playing",
+                    "Now playing in room " + room.getName() + ": " + media.getTitle(),
+                    "MEDIA",
+                    media.getId()
+            );
+        }
 
         broadcastQueue(room);
 
@@ -191,6 +213,16 @@ public class WatchQueueService {
         state.setLastSyncedAt(LocalDateTime.now());
 
         playbackStateRepository.save(state);
+        for (RoomParticipant participant : roomParticipantRepository.findAllByRoomAndJoinStatus(room, JoinStatus.JOINED)) {
+            notificationService.createNotification(
+                    participant.getUser(),
+                    NotificationType.NOW_PLAYING,
+                    "Now playing",
+                    "Now playing in room " + room.getName() + ": " + media.getTitle(),
+                    "MEDIA",
+                    media.getId()
+            );
+        }
 
         broadcastQueue(room);
 

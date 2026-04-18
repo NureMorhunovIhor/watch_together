@@ -6,5 +6,6 @@ public enum NotificationType {
     HOST_TRANSFERRED,
     QUEUE_UPDATED,
     NOW_PLAYING,
-    SYSTEM
+    SYSTEM,
+    FRIEND_REQUEST
 }

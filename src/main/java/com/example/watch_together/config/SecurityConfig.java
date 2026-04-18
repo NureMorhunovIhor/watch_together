@@ -45,7 +45,8 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/chat-test.html",
                                 "/room-test.html",
-                                "/reset-password.html"
+                                "/reset-password.html",
+                                "/notification-test.html"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

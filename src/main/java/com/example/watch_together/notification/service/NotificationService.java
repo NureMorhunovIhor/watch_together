@@ -8,6 +8,7 @@ import com.example.watch_together.notification.repository.NotificationRepository
 import com.example.watch_together.user.entity.User;
 import com.example.watch_together.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +22,7 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Transactional
     public void createNotification(User user,
@@ -40,7 +42,14 @@ public class NotificationService {
                 .isRead(false)
                 .build();
 
-        notificationRepository.save(notification);
+        notification = notificationRepository.save(notification);
+
+        NotificationResponse response = map(notification);
+
+        messagingTemplate.convertAndSend(
+                "/topic/notifications/" + user.getUsername(),
+                response
+        );
     }
 
     public List<NotificationResponse> getMyNotifications(Principal principal) {

@@ -1,5 +1,7 @@
 package com.example.watch_together.user.controller;
 
+import com.example.watch_together.user.dto.UpdateProfileRequest;
+import com.example.watch_together.user.dto.UserProfileResponse;
 import com.example.watch_together.user.dto.UserSearchResponse;
 import com.example.watch_together.user.service.UserSearchService;
 import lombok.RequiredArgsConstructor;
@@ -21,4 +23,13 @@ public class UserSearchController {
                                                                 Principal principal) {
         return ResponseEntity.ok(userSearchService.searchUsers(query, principal));
     }
+
+    @PatchMapping("/me")
+    public UserProfileResponse updateMe(
+            @RequestBody UpdateProfileRequest request,
+            Principal principal
+    ) {
+        return userSearchService.updateCurrentUser(request, principal);
+    }
+
 }

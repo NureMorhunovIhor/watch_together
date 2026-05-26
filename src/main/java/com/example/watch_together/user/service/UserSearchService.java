@@ -3,9 +3,12 @@ package com.example.watch_together.user.service;
 import com.example.watch_together.friend.entity.Friendship;
 import com.example.watch_together.friend.entity.FriendshipStatus;
 import com.example.watch_together.friend.repository.FriendshipRepository;
+import com.example.watch_together.user.dto.UpdateProfileRequest;
+import com.example.watch_together.user.dto.UserProfileResponse;
 import com.example.watch_together.user.dto.UserSearchResponse;
 import com.example.watch_together.user.entity.User;
 import com.example.watch_together.user.repository.UserRepository;
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -74,4 +77,48 @@ public class UserSearchService {
                 .or(() -> userRepository.findByUsername(principal.getName()))
                 .orElseThrow(() -> new RuntimeException("User not found"));
     }
+    @Transactional
+    public UserProfileResponse updateCurrentUser(UpdateProfileRequest request, Principal principal) {
+        User user = getUserByPrincipal(principal);
+
+        if (request.getDisplayName() != null && !request.getDisplayName().isBlank()) {
+            user.setDisplayName(request.getDisplayName().trim());
+        }
+
+        if (request.getUsername() != null && !request.getUsername().isBlank()) {
+            String newUsername = request.getUsername().trim();
+
+            if (!newUsername.equalsIgnoreCase(user.getUsername())
+                    && userRepository.existsByUsername(newUsername)) {
+                throw new RuntimeException("Username is already taken");
+            }
+
+            user.setUsername(newUsername);
+        }
+
+        if (request.getEmail() != null && !request.getEmail().isBlank()) {
+            String newEmail = request.getEmail().trim().toLowerCase();
+
+            if (!newEmail.equalsIgnoreCase(user.getEmail())
+                    && userRepository.existsByEmail(newEmail)) {
+                throw new RuntimeException("Email is already taken");
+            }
+
+            user.setEmail(newEmail);
+        }
+
+        User savedUser = userRepository.save(user);
+
+        return mapToProfileResponse(savedUser);
+    }
+    private UserProfileResponse mapToProfileResponse(User user) {
+        return UserProfileResponse.builder()
+                .id(user.getId())
+                .username(user.getUsername())
+                .email(user.getEmail())
+                .displayName(user.getDisplayName())
+                .avatarUrl(user.getAvatarUrl())
+                .build();
+    }
+
 }

@@ -11,6 +11,7 @@ import com.example.watch_together.security.JwtService;
 import com.example.watch_together.security.TotpService;
 import com.example.watch_together.session.entity.UserSession;
 import com.example.watch_together.session.repository.UserSessionRepository;
+import com.example.watch_together.user.dto.UserProfileResponse;
 import com.example.watch_together.user.entity.User;
 import com.example.watch_together.user.entity.UserStatus;
 import com.example.watch_together.user.repository.UserRepository;
@@ -329,5 +330,22 @@ public class AuthService {
 
         token.setUsed(true);
         token.setUsedAt(LocalDateTime.now());
+    }
+    public UserProfileResponse getCurrentUserProfile(Principal principal) {
+        if (principal == null) {
+            throw new RuntimeException("Unauthorized");
+        }
+
+        User user = userRepository.findByEmail(principal.getName())
+                .or(() -> userRepository.findByUsername(principal.getName()))
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        return UserProfileResponse.builder()
+                .id(user.getId())
+                .username(user.getUsername())
+                .email(user.getEmail())
+                .displayName(user.getDisplayName())
+                .avatarUrl(user.getAvatarUrl())
+                .build();
     }
 }

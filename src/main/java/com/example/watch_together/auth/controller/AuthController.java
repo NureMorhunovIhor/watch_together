@@ -2,6 +2,7 @@ package com.example.watch_together.auth.controller;
 
 import com.example.watch_together.auth.dto.*;
 import com.example.watch_together.auth.service.AuthService;
+import com.example.watch_together.user.dto.UserProfileResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -80,5 +81,8 @@ public class AuthController {
         authService.resetPassword(request);
         return ResponseEntity.noContent().build();
     }
-    
+    @GetMapping("/me")
+    public ResponseEntity<UserProfileResponse> me(Principal principal) {
+        return ResponseEntity.ok(authService.getCurrentUserProfile(principal));
+    }
 }

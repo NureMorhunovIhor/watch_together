@@ -263,11 +263,6 @@ public class WatchQueueService {
         queuedItems.removeIf(i -> i.getId().equals(target.getId()));
         queuedItems.add(newOrder - 1, target);
 
-        /*
-         * Важно:
-         * чтобы не ловить duplicate key на уникальном (room_id, queue_order),
-         * сначала временно уводим queue_order у QUEUED-элементов в безопасную зону.
-         */
         int tempBase = getNextQueueOrder(room) + 1000;
 
         for (int i = 0; i < queuedItems.size(); i++) {

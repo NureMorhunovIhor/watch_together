@@ -80,4 +80,5 @@ public class AuthController {
         authService.resetPassword(request);
         return ResponseEntity.noContent().build();
     }
+    
 }

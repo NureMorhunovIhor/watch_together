@@ -16,5 +16,8 @@ public class RoomResponse {
     private RoomType roomType;
     private AccessMode accessMode;
     private Integer maxParticipants;
+
+    private Long participantsCount;
+
     private Boolean active;
 }

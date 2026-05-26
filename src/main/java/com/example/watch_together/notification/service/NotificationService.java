@@ -5,6 +5,7 @@ import com.example.watch_together.notification.dto.UnreadCountResponse;
 import com.example.watch_together.notification.entity.Notification;
 import com.example.watch_together.notification.entity.NotificationType;
 import com.example.watch_together.notification.repository.NotificationRepository;
+import com.example.watch_together.room.repository.WatchRoomRepository;
 import com.example.watch_together.user.entity.User;
 import com.example.watch_together.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +24,7 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
-
+    private final WatchRoomRepository watchRoomRepository;
     @Transactional
     public void createNotification(User user,
                                    NotificationType type,
@@ -44,7 +45,7 @@ public class NotificationService {
 
         notification = notificationRepository.save(notification);
 
-        NotificationResponse response = map(notification);
+        NotificationResponse response = mapNotification(notification);
 
         messagingTemplate.convertAndSend(
                 "/topic/notifications/" + user.getUsername(),
@@ -57,7 +58,7 @@ public class NotificationService {
 
         return notificationRepository.findAllByUserOrderByCreatedAtDesc(user)
                 .stream()
-                .map(this::map)
+                .map(this::mapNotification)
                 .toList();
     }
 
@@ -104,8 +105,8 @@ public class NotificationService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
     }
 
-    private NotificationResponse map(Notification notification) {
-        return NotificationResponse.builder()
+    private NotificationResponse mapNotification(Notification notification) {
+        NotificationResponse.NotificationResponseBuilder builder = NotificationResponse.builder()
                 .id(notification.getId())
                 .type(notification.getType())
                 .title(notification.getTitle())
@@ -114,7 +115,29 @@ public class NotificationService {
                 .relatedEntityId(notification.getRelatedEntityId())
                 .isRead(notification.getIsRead())
                 .createdAt(notification.getCreatedAt())
-                .readAt(notification.getReadAt())
-                .build();
+                .readAt(notification.getReadAt());
+
+        if (
+                notification.getType() == NotificationType.ROOM_INVITE
+                        && "ROOM".equals(notification.getRelatedEntityType())
+                        && notification.getRelatedEntityId() != null
+        ) {
+            watchRoomRepository.findById(notification.getRelatedEntityId())
+                    .ifPresent(room -> builder
+                            .roomCode(room.getRoomCode())
+                            .roomName(room.getName())
+                    );
+        }
+
+        return builder.build();
+    }
+    @Transactional
+    public void deleteNotification(Long id, Principal principal) {
+        User user = getUserByPrincipal(principal);
+
+        Notification notification = notificationRepository.findByIdAndUser(id, user)
+                .orElseThrow(() -> new RuntimeException("Notification not found"));
+
+        notificationRepository.delete(notification);
     }
 }

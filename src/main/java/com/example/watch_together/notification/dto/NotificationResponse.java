@@ -18,4 +18,8 @@ public class NotificationResponse {
     private Boolean isRead;
     private LocalDateTime createdAt;
     private LocalDateTime readAt;
+
+    // Только для ROOM_INVITE
+    private String roomCode;
+    private String roomName;
 }

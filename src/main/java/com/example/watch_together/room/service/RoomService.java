@@ -295,6 +295,11 @@ public class RoomService {
     }
 
     private RoomResponse mapRoom(WatchRoom room) {
+        long participantsCount = roomParticipantRepository.countByRoomAndJoinStatus(
+                room,
+                JoinStatus.JOINED
+        );
+
         return RoomResponse.builder()
                 .roomCode(room.getRoomCode())
                 .name(room.getName())
@@ -304,6 +309,7 @@ public class RoomService {
                 .roomType(room.getRoomType())
                 .accessMode(room.getAccessMode())
                 .maxParticipants(room.getMaxParticipants())
+                .participantsCount(participantsCount)
                 .active(room.getIsActive())
                 .build();
     }
@@ -375,6 +381,10 @@ public class RoomService {
 
         getHostParticipant(room, host);
 
+        if (host.getId().equals(userId)) {
+            throw new RuntimeException("You cannot invite yourself");
+        }
+
         User target = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -382,7 +392,39 @@ public class RoomService {
                 .orElse(null);
 
         if (existing != null) {
-            throw new RuntimeException("User already invited or in room");
+            if (existing.getJoinStatus() == JoinStatus.JOINED) {
+                throw new RuntimeException("User is already in room");
+            }
+
+            if (existing.getJoinStatus() == JoinStatus.KICKED) {
+                throw new RuntimeException("User was kicked from this room");
+            }
+
+            if (existing.getJoinStatus() == JoinStatus.INVITED) {
+                return;
+            }
+
+            if (existing.getJoinStatus() == JoinStatus.LEFT) {
+                existing.setJoinStatus(JoinStatus.INVITED);
+                existing.setJoinedAt(LocalDateTime.now());
+                existing.setLeftAt(null);
+                existing.setParticipantRole(ParticipantRole.VIEWER);
+                existing.setIsMuted(false);
+                existing.setCanControlPlayback(false);
+
+                roomParticipantRepository.save(existing);
+
+                notificationService.createNotification(
+                        target,
+                        NotificationType.ROOM_INVITE,
+                        "Room invitation",
+                        "You were invited to room: " + room.getName(),
+                        "ROOM",
+                        room.getId()
+                );
+
+                return;
+            }
         }
 
         RoomParticipant invite = RoomParticipant.builder()
@@ -396,6 +438,7 @@ public class RoomService {
                 .build();
 
         roomParticipantRepository.save(invite);
+
         notificationService.createNotification(
                 target,
                 NotificationType.ROOM_INVITE,

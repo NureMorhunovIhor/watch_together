@@ -1,5 +1,6 @@
 package com.example.watch_together.config;
 
+import com.example.watch_together.auth.oauth.OAuth2SuccessHandler;
 import com.example.watch_together.security.CustomAccessDeniedHandler;
 import com.example.watch_together.security.CustomAuthenticationEntryPoint;
 import com.example.watch_together.security.JwtAuthenticationFilter;
@@ -22,6 +23,7 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final CustomAuthenticationEntryPoint customAuthenticationEntryPoint;
     private final CustomAccessDeniedHandler customAccessDeniedHandler;
+    private final OAuth2SuccessHandler oAuth2SuccessHandler;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -52,7 +54,10 @@ public class SecurityConfig {
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .oauth2Login(oauth -> oauth
+                    .successHandler(oAuth2SuccessHandler)
+                );
 
         return http.build();
     }

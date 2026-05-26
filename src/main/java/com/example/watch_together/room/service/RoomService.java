@@ -14,15 +14,14 @@ import com.example.watch_together.security.CustomUserDetails;
 import com.example.watch_together.user.entity.User;
 import com.example.watch_together.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +32,7 @@ public class RoomService {
     private final RoomParticipantRepository roomParticipantRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final SimpMessagingTemplate messagingTemplate;
     @Transactional
     public RoomResponse createRoom(CreateRoomRequest request) {
         User owner = getCurrentUser();
@@ -144,6 +144,7 @@ public class RoomService {
                 participant.setLeftAt(null);
 
                 roomParticipantRepository.save(participant);
+                sendParticipantsChanged(room.getRoomCode());
                 return mapRoom(room);
             }
 
@@ -166,7 +167,7 @@ public class RoomService {
                 .build();
 
         roomParticipantRepository.save(newParticipant);
-
+        sendParticipantsChanged(room.getRoomCode());
         return mapRoom(room);
     }
 
@@ -182,7 +183,7 @@ public class RoomService {
 
         participant.setJoinStatus(JoinStatus.LEFT);
         participant.setLeftAt(LocalDateTime.now());
-
+        sendParticipantsChanged(room.getRoomCode());
         if (isHost) {
             handleHostLeaving(room);
         }
@@ -252,6 +253,11 @@ public class RoomService {
 
         participant.setJoinStatus(JoinStatus.KICKED);
         participant.setLeftAt(LocalDateTime.now());
+        sendRoomEvent(room.getRoomCode(), "room.kick", Map.of(
+                "userId", target.getId()
+        ));
+
+        sendParticipantsChanged(room.getRoomCode());
     }
 
     @Transactional
@@ -292,6 +298,12 @@ public class RoomService {
                 "ROOM",
                 room.getId()
         );
+        sendRoomEvent(room.getRoomCode(), "room.host-transferred", Map.of(
+                "oldHostId", currentUser.getId(),
+                "newHostId", newHostUser.getId()
+        ));
+
+        sendParticipantsChanged(room.getRoomCode());
     }
 
     private RoomResponse mapRoom(WatchRoom room) {
@@ -348,8 +360,15 @@ public class RoomService {
 
         getHostParticipant(room, user);
 
+        String oldCode = room.getRoomCode();
         String newCode = generateRoomCode();
+
         room.setRoomCode(newCode);
+
+        sendRoomEvent(oldCode, "room.code-regenerated", Map.of(
+                "oldCode", oldCode,
+                "newCode", newCode
+        ));
 
         return newCode;
     }
@@ -522,5 +541,23 @@ public class RoomService {
                 .orElseThrow(() -> new RuntimeException("User not in room"));
 
         target.setCanControlPlayback(false);
+    }
+
+    private void sendRoomEvent(String roomCode, String type, Object data) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("type", type);
+        payload.put("data", data);
+
+        messagingTemplate.convertAndSend(
+                "/topic/rooms/" + roomCode + "/events",
+                (Object) payload
+        );
+    }
+
+    private void sendParticipantsChanged(String roomCode) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("roomCode", roomCode);
+
+        sendRoomEvent(roomCode, "room.participants-changed", data);
     }
 }

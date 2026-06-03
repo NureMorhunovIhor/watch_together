@@ -43,7 +43,8 @@ public class SecurityConfig {
                                 "/api/auth/refresh",
                                 "/api/auth/logout",
                                 "/api/auth/forgot-password",
-                                "/api/auth/reset-password"
+                                "/api/auth/reset-password",
+                                "/uploads/**"
                         ).permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers(

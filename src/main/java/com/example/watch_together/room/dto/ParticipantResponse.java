@@ -10,6 +10,7 @@ public class ParticipantResponse {
     private Long userId;
     private String username;
     private String displayName;
+    private String avatarUrl;
     private ParticipantRole role;
     private Boolean muted;
     private Boolean canControlPlayback;

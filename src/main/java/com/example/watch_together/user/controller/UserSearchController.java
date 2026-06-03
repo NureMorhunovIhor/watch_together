@@ -4,6 +4,8 @@ import com.example.watch_together.user.dto.UpdateProfileRequest;
 import com.example.watch_together.user.dto.UserProfileResponse;
 import com.example.watch_together.user.dto.UserSearchResponse;
 import com.example.watch_together.user.service.UserSearchService;
+import com.example.watch_together.user.dto.AvatarUpdateRequest;
+import com.example.watch_together.user.dto.AvatarUpdateResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -31,5 +33,11 @@ public class UserSearchController {
     ) {
         return userSearchService.updateCurrentUser(request, principal);
     }
-
+    @PostMapping("/me/avatar")
+    public AvatarUpdateResponse updateAvatar(
+            @RequestBody AvatarUpdateRequest request,
+            Principal principal
+    ) {
+        return userSearchService.updateAvatar(request, principal);
+    }
 }

@@ -216,6 +216,7 @@ public class RoomService {
                         .userId(p.getUser().getId())
                         .username(p.getUser().getUsername())
                         .displayName(p.getUser().getDisplayName())
+                        .avatarUrl(p.getUser().getAvatarUrl())
                         .role(p.getParticipantRole())
                         .muted(p.getIsMuted())
                         .canControlPlayback(p.getCanControlPlayback())

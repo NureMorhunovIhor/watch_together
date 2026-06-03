@@ -11,7 +11,14 @@ import com.example.watch_together.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import com.example.watch_together.user.dto.AvatarUpdateRequest;
+import com.example.watch_together.user.dto.AvatarUpdateResponse;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Base64;
+import java.util.UUID;
 import java.security.Principal;
 import java.util.List;
 
@@ -120,5 +127,49 @@ public class UserSearchService {
                 .avatarUrl(user.getAvatarUrl())
                 .build();
     }
+    @Transactional
+    public AvatarUpdateResponse updateAvatar(AvatarUpdateRequest request, Principal principal) {
+        User user = getUserByPrincipal(principal);
 
+        if (request.getDataUrl() == null || request.getDataUrl().isBlank()) {
+            throw new RuntimeException("Avatar image is required");
+        }
+
+        try {
+            String dataUrl = request.getDataUrl();
+
+            String extension = "png";
+
+            if (dataUrl.startsWith("data:image/jpeg")) {
+                extension = "jpg";
+            } else if (dataUrl.startsWith("data:image/webp")) {
+                extension = "webp";
+            } else if (dataUrl.startsWith("data:image/png")) {
+                extension = "png";
+            }
+
+            String base64Data = dataUrl.substring(dataUrl.indexOf(",") + 1);
+            byte[] imageBytes = Base64.getDecoder().decode(base64Data);
+
+            Path uploadDir = Paths.get("uploads", "avatars");
+
+            if (!Files.exists(uploadDir)) {
+                Files.createDirectories(uploadDir);
+            }
+
+            String fileName = "avatar_" + user.getId() + "_" + UUID.randomUUID() + "." + extension;
+            Path filePath = uploadDir.resolve(fileName);
+
+            Files.write(filePath, imageBytes);
+
+            String avatarUrl = "/uploads/avatars/" + fileName;
+
+            user.setAvatarUrl(avatarUrl);
+            userRepository.saveAndFlush(user);
+
+            return new AvatarUpdateResponse(avatarUrl);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to upload avatar");
+        }
+    }
 }

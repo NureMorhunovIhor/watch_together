@@ -109,4 +109,9 @@ public class RoomController {
         roomService.revokePlaybackControl(code, userId);
         return ResponseEntity.ok().build();
     }
+
+    @GetMapping("/my")
+    public List<RoomResponse> getMyRooms() {
+        return roomService.getMyRooms();
+    }
 }

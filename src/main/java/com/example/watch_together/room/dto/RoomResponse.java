@@ -20,4 +20,7 @@ public class RoomResponse {
     private Long participantsCount;
 
     private Boolean active;
+    private String themeColor;
+    private String coverImageUrl;
+    private String backgroundUrl;
 }

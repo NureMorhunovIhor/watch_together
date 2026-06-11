@@ -60,4 +60,13 @@ public class WatchRoom {
 
     @Column(name = "current_media_id")
     private Long currentMediaId;
+
+    @Column(name = "theme_color")
+    private String themeColor;
+
+    @Column(name = "cover_image_url")
+    private String coverImageUrl;
+
+    @Column(name = "background_url")
+    private String backgroundUrl;
 }

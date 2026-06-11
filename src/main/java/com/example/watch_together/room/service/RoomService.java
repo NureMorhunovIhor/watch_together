@@ -1,5 +1,6 @@
 package com.example.watch_together.room.service;
 
+import com.example.watch_together.billing.service.BillingService;
 import com.example.watch_together.notification.entity.NotificationType;
 import com.example.watch_together.notification.service.NotificationService;
 import com.example.watch_together.room.dto.CreateRoomRequest;
@@ -18,7 +19,10 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import com.example.watch_together.billing.dto.BillingPlanResponse;
+import com.example.watch_together.billing.service.BillingService;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -33,9 +37,34 @@ public class RoomService {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final BillingService billingService;
     @Transactional
     public RoomResponse createRoom(CreateRoomRequest request) {
         User owner = getCurrentUser();
+        BillingPlanResponse plan = billingService.getCurrentPlan(owner);
+
+        long activeRooms = watchRoomRepository.countByOwnerAndIsActive(owner, true);
+
+        if (activeRooms >= plan.getMaxRooms()) {
+            throw new ResponseStatusException(
+                    HttpStatus.PAYMENT_REQUIRED,
+                    "Your current plan allows only " + plan.getMaxRooms() + " active rooms"
+            );
+        }
+
+        if (request.getMaxParticipants() > plan.getMaxParticipants()) {
+            throw new ResponseStatusException(
+                    HttpStatus.PAYMENT_REQUIRED,
+                    "Your current plan allows up to " + plan.getMaxParticipants() + " participants"
+            );
+        }
+
+        if (request.getAccessMode() == AccessMode.INVITE_ONLY && !Boolean.TRUE.equals(plan.getAllowInviteOnly())) {
+            throw new ResponseStatusException(
+                    HttpStatus.PAYMENT_REQUIRED,
+                    "Invite-only rooms are available on Premium and Pro plans"
+            );
+        }
 
         WatchRoom room = WatchRoom.builder()
                 .roomCode(generateRoomCode())
@@ -101,7 +130,23 @@ public class RoomService {
 
             room.setMaxParticipants(request.getMaxParticipants());
         }
+        BillingPlanResponse plan = billingService.getCurrentPlan(user);
 
+        boolean canCustomize = Boolean.TRUE.equals(plan.getAllowRoomCustomization());
+
+        if ((request.getThemeColor() != null || request.getCoverImageUrl() != null || request.getBackgroundUrl() != null)
+                && !canCustomize) {
+            throw new ResponseStatusException(
+                    HttpStatus.PAYMENT_REQUIRED,
+                    "Room customization is available on Premium and Pro plans"
+            );
+        }
+
+        if (canCustomize) {
+            if (request.getThemeColor() != null) room.setThemeColor(request.getThemeColor());
+            if (request.getCoverImageUrl() != null) room.setCoverImageUrl(request.getCoverImageUrl());
+            if (request.getBackgroundUrl() != null) room.setBackgroundUrl(request.getBackgroundUrl());
+        }
         return mapRoom(room);
     }
     public RoomResponse getByCode(String code) {
@@ -324,6 +369,9 @@ public class RoomService {
                 .maxParticipants(room.getMaxParticipants())
                 .participantsCount(participantsCount)
                 .active(room.getIsActive())
+                .themeColor(room.getThemeColor())
+                .coverImageUrl(room.getCoverImageUrl())
+                .backgroundUrl(room.getBackgroundUrl())
                 .build();
     }
 
@@ -560,5 +608,18 @@ public class RoomService {
         data.put("roomCode", roomCode);
 
         sendRoomEvent(roomCode, "room.participants-changed", data);
+    }
+
+    public List<RoomResponse> getMyRooms() {
+        User user = getCurrentUser();
+
+        return roomParticipantRepository
+                .findAllByUserAndJoinStatus(user, JoinStatus.JOINED)
+                .stream()
+                .map(RoomParticipant::getRoom)
+                .filter(room -> Boolean.TRUE.equals(room.getIsActive()))
+                .distinct()
+                .map(this::mapRoom)
+                .toList();
     }
 }

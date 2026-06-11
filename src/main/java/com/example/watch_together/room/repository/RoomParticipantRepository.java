@@ -1,5 +1,6 @@
 package com.example.watch_together.room.repository;
 
+import com.example.watch_together.room.entity.JoinStatus;
 import com.example.watch_together.room.entity.RoomParticipant;
 import com.example.watch_together.room.entity.WatchRoom;
 import com.example.watch_together.user.entity.User;
@@ -12,5 +13,5 @@ public interface RoomParticipantRepository extends JpaRepository<RoomParticipant
     Optional<RoomParticipant> findByRoomAndUser(WatchRoom room, User user);
     List<RoomParticipant> findAllByRoomAndJoinStatus(WatchRoom room, com.example.watch_together.room.entity.JoinStatus joinStatus);
     long countByRoomAndJoinStatus(WatchRoom room, com.example.watch_together.room.entity.JoinStatus joinStatus);
-
+    List<RoomParticipant> findAllByUserAndJoinStatus(User user, JoinStatus joinStatus);
 }

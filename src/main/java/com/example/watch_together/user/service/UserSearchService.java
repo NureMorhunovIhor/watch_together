@@ -1,5 +1,6 @@
 package com.example.watch_together.user.service;
 
+import com.example.watch_together.billing.service.BillingService;
 import com.example.watch_together.friend.entity.Friendship;
 import com.example.watch_together.friend.entity.FriendshipStatus;
 import com.example.watch_together.friend.repository.FriendshipRepository;
@@ -28,6 +29,7 @@ public class UserSearchService {
 
     private final UserRepository userRepository;
     private final FriendshipRepository friendshipRepository;
+    private final BillingService billingService;
 
     public List<UserSearchResponse> searchUsers(String query, Principal principal) {
         User currentUser = getUserByPrincipal(principal);
@@ -125,6 +127,7 @@ public class UserSearchService {
                 .email(user.getEmail())
                 .displayName(user.getDisplayName())
                 .avatarUrl(user.getAvatarUrl())
+                .planId(billingService.getCurrentPlanId(user))
                 .build();
     }
     @Transactional

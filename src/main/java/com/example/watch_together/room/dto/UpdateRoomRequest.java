@@ -17,4 +17,8 @@ public class UpdateRoomRequest {
     @Min(2)
     @Max(100)
     private Integer maxParticipants;
+
+    private String themeColor;
+    private String coverImageUrl;
+    private String backgroundUrl;
 }

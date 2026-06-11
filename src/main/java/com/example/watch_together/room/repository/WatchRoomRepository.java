@@ -1,6 +1,7 @@
 package com.example.watch_together.room.repository;
 
 import com.example.watch_together.room.entity.RoomType;
+import com.example.watch_together.user.entity.User;
 import com.example.watch_together.room.entity.WatchRoom;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -21,4 +22,7 @@ public interface WatchRoomRepository extends JpaRepository<WatchRoom, Long> {
     AND LOWER(r.name) LIKE LOWER(CONCAT('%', :query, '%'))
 """)
     List<WatchRoom> searchRooms(@Param("query") String query);
+    List<WatchRoom> findByOwnerAndIsActive(User owner, Boolean isActive);
+    long countByOwnerAndIsActive(User owner, Boolean isActive);
+
 }

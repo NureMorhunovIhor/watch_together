@@ -13,4 +13,9 @@ public interface MediaItemRepository extends JpaRepository<MediaItem, Long> {
     List<MediaItem> findAllByIsPublicTrueAndTitleContainingIgnoreCaseOrderByIdDesc(String title);
 
     Optional<MediaItem> findByIdAndIsPublicTrue(Long id);
+    List<MediaItem> findTop10ByTitleContainingIgnoreCase(String title);
+
+    boolean existsBySourceUrl(String sourceUrl);
+
+    Optional<MediaItem> findFirstBySourceUrl(String sourceUrl);
 }

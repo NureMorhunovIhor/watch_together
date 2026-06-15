@@ -1,7 +1,11 @@
 package com.example.watch_together.media.controller;
 
 import com.example.watch_together.media.dto.CreateMediaRequest;
+import com.example.watch_together.media.dto.ExternalMediaResponse;
+import com.example.watch_together.media.dto.ImportMediaRequest;
 import com.example.watch_together.media.dto.MediaResponse;
+import com.example.watch_together.media.entity.MediaItem;
+import com.example.watch_together.media.service.ExternalMediaService;
 import com.example.watch_together.media.service.MediaService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +19,7 @@ import java.util.List;
 public class MediaController {
 
     private final MediaService mediaService;
+    private final ExternalMediaService externalMediaService;
 
     @PostMapping
     public ResponseEntity<MediaResponse> createMedia(@RequestBody CreateMediaRequest request) {
@@ -27,8 +32,8 @@ public class MediaController {
     }
 
     @GetMapping("/search")
-    public ResponseEntity<List<MediaResponse>> searchCatalog(@RequestParam String query) {
-        return ResponseEntity.ok(mediaService.searchPublicCatalog(query));
+    public ResponseEntity<List<ExternalMediaResponse>> searchMedia(@RequestParam String query) {
+        return ResponseEntity.ok(externalMediaService.search(query));
     }
 
     @GetMapping("/{id}")
@@ -40,5 +45,10 @@ public class MediaController {
     public ResponseEntity<Void> deleteMedia(@PathVariable Long id) {
         mediaService.deleteMedia(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/import")
+    public MediaItem importMedia(@RequestBody ImportMediaRequest request) {
+        return externalMediaService.importMedia(request);
     }
 }

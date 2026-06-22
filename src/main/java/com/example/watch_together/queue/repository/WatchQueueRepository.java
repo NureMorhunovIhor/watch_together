@@ -22,4 +22,8 @@ public interface WatchQueueRepository extends JpaRepository<WatchQueueItem, Long
 
     @Query("select coalesce(max(w.queueOrder), 0) from WatchQueueItem w where w.room = :room")
     Integer findMaxQueueOrderByRoom(@Param("room") WatchRoom room);
+
+    long countByRoom(WatchRoom room);
+
+    long countByRoomAndStatus(WatchRoom room, QueueStatus status);
 }

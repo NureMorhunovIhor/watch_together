@@ -21,7 +21,13 @@ public class ChatRestController {
                                                                      Principal principal) {
         return ResponseEntity.ok(chatService.getRoomMessages(roomCode, principal));
     }
-
+    @PostMapping("/rooms/{roomCode}/messages")
+    public ResponseEntity<ChatMessageResponse> sendMessage(@PathVariable String roomCode,
+                                                           @RequestBody ChatMessageRequest request,
+                                                           Principal principal) {
+        request.setRoomCode(roomCode);
+        return ResponseEntity.ok(chatService.sendMessage(request, principal));
+    }
     @PatchMapping("/messages/{messageId}")
     public ResponseEntity<ChatMessageResponse> editMessage(@PathVariable Long messageId,
                                                            @RequestBody EditMessageRequest request,

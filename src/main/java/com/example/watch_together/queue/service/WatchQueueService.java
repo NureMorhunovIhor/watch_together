@@ -94,6 +94,7 @@ public class WatchQueueService {
 
         return watchQueueRepository.findAllByRoomOrderByQueueOrderAsc(room)
                 .stream()
+                .filter(this::isVisibleQueueItem)
                 .map(this::mapItem)
                 .toList();
     }
@@ -116,6 +117,15 @@ public class WatchQueueService {
                 && room.getCurrentMediaId() != null
                 && room.getCurrentMediaId().equals(item.getMediaId())) {
             room.setCurrentMediaId(null);
+
+            playbackStateRepository.findByRoom(room).ifPresent(state -> {
+                state.setMediaId(null);
+                state.setPlaybackStatus(PlaybackStatus.STOPPED);
+                state.setCurrentPositionSeconds(0);
+                state.setLastActionBy(user);
+                state.setLastSyncedAt(LocalDateTime.now());
+                playbackStateRepository.save(state);
+            });
         }
 
         broadcastQueue(room);
@@ -131,6 +141,10 @@ public class WatchQueueService {
 
         WatchQueueItem item = watchQueueRepository.findByIdAndRoom(queueItemId, room)
                 .orElseThrow(() -> new RuntimeException("Queue item not found"));
+
+        if (item.getStatus() == QueueStatus.REMOVED) {
+            throw new RuntimeException("Cannot play removed queue item");
+        }
 
         MediaItem media = mediaItemRepository.findById(item.getMediaId())
                 .orElseThrow(() -> new RuntimeException("Media not found"));
@@ -173,6 +187,10 @@ public class WatchQueueService {
         broadcastQueue(room);
 
         return mapItem(item, media);
+    }
+
+    private boolean isVisibleQueueItem(WatchQueueItem item) {
+        return item.getStatus() != QueueStatus.REMOVED;
     }
 
     @Transactional
@@ -284,6 +302,7 @@ public class WatchQueueService {
 
     private void markCurrentlyPlayingAsPlayed(WatchRoom room) {
         List<WatchQueueItem> all = watchQueueRepository.findAllByRoomOrderByQueueOrderAsc(room);
+
         for (WatchQueueItem item : all) {
             if (item.getStatus() == QueueStatus.PLAYING) {
                 item.setStatus(QueueStatus.PLAYED);
@@ -299,6 +318,7 @@ public class WatchQueueService {
     private void broadcastQueue(WatchRoom room) {
         List<QueueItemResponse> queue = watchQueueRepository.findAllByRoomOrderByQueueOrderAsc(room)
                 .stream()
+                .filter(this::isVisibleQueueItem)
                 .map(this::mapItem)
                 .toList();
 

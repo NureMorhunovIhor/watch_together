@@ -2,11 +2,13 @@ package com.example.watch_together.room.controller;
 
 import com.example.watch_together.room.dto.*;
 import com.example.watch_together.room.service.RoomService;
+import com.example.watch_together.room.service.RoomStatsService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.List;
 
 @RestController
@@ -15,6 +17,7 @@ import java.util.List;
 public class RoomController {
 
     private final RoomService roomService;
+    private final RoomStatsService roomStatsService;
 
     @PostMapping
     public ResponseEntity<RoomResponse> createRoom(@Valid @RequestBody CreateRoomRequest request) {
@@ -113,5 +116,11 @@ public class RoomController {
     @GetMapping("/my")
     public List<RoomResponse> getMyRooms() {
         return roomService.getMyRooms();
+    }
+
+    @GetMapping("/{roomCode}/stats")
+    public ResponseEntity<RoomStatsResponse> getRoomStats(@PathVariable String roomCode,
+                                                          Principal principal) {
+        return ResponseEntity.ok(roomStatsService.getRoomStats(roomCode, principal));
     }
 }

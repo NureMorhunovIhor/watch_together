@@ -1,5 +1,7 @@
 package com.example.watch_together.chat.service;
 
+import com.example.watch_together.billing.dto.BillingPlanResponse;
+import com.example.watch_together.billing.service.BillingService;
 import com.example.watch_together.chat.dto.*;
 import com.example.watch_together.chat.entity.*;
 import com.example.watch_together.chat.repository.ChatMessageRepository;
@@ -14,9 +16,11 @@ import com.example.watch_together.room.repository.WatchRoomRepository;
 import com.example.watch_together.user.entity.User;
 import com.example.watch_together.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.security.Principal;
 import java.time.LocalDateTime;
@@ -33,6 +37,7 @@ public class ChatService {
     private final ChatMessageRepository chatMessageRepository;
     private final MessageReactionRepository messageReactionRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final BillingService billingService;
 
     @Transactional
     public ChatMessageResponse sendMessage(ChatMessageRequest request, Principal principal) {
@@ -42,7 +47,16 @@ public class ChatService {
         validateRoomMembership(room, user);
         validateChatAllowed(room);
 
+        MessageType messageType = request.getMessageType() != null
+                ? request.getMessageType()
+                : MessageType.TEXT;
+
+        if (messageType == MessageType.STICKER) {
+            validatePremiumSticker(request.getContent(), user);
+        }
+
         ChatMessage replyTo = null;
+
         if (request.getReplyToMessageId() != null) {
             replyTo = chatMessageRepository.findByIdAndRoom(request.getReplyToMessageId(), room)
                     .orElseThrow(() -> new RuntimeException("Reply message not found in this room"));
@@ -51,7 +65,7 @@ public class ChatService {
         ChatMessage message = ChatMessage.builder()
                 .room(room)
                 .sender(user)
-                .messageType(MessageType.TEXT)
+                .messageType(messageType)
                 .content(request.getContent())
                 .replyToMessage(replyTo)
                 .isEdited(false)
@@ -66,6 +80,25 @@ public class ChatService {
         return response;
     }
 
+    private void validatePremiumSticker(String stickerId, User user) {
+        if (!PremiumStickerRegistry.exists(stickerId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Unknown sticker"
+            );
+        }
+
+        BillingPlanResponse plan = billingService.getCurrentPlan(user);
+
+        String planId = plan.getId() != null ? plan.getId().toUpperCase() : "FREE";
+
+        if ("FREE".equals(planId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.PAYMENT_REQUIRED,
+                    "Premium stickers are available only for Premium and Pro users"
+            );
+        }
+    }
     public List<ChatMessageResponse> getRoomMessages(String roomCode, Principal principal) {
         WatchRoom room = getActiveRoomByCode(roomCode);
         User user = getUserByPrincipal(principal);

@@ -10,4 +10,5 @@ import java.util.Optional;
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> {
     List<ChatMessage> findAllByRoomOrderBySentAtAsc(WatchRoom room);
     Optional<ChatMessage> findByIdAndRoom(Long id, WatchRoom room);
+    long countByRoom(WatchRoom room);
 }

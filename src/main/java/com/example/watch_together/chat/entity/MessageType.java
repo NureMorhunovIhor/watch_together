@@ -5,5 +5,6 @@ public enum MessageType {
     SYSTEM,
     IMAGE,
     LINK,
-    EMOJI
+    EMOJI,
+    STICKER
 }

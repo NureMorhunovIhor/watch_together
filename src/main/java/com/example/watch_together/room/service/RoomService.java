@@ -116,10 +116,33 @@ public class RoomService {
 
         getHostParticipant(room, user);
 
-        if (request.getName() != null) room.setName(request.getName());
-        if (request.getDescription() != null) room.setDescription(request.getDescription());
-        if (request.getRoomType() != null) room.setRoomType(request.getRoomType());
-        if (request.getAccessMode() != null) room.setAccessMode(request.getAccessMode());
+        BillingPlanResponse plan = billingService.getCurrentPlan(user);
+
+        boolean canCustomize = Boolean.TRUE.equals(plan.getAllowRoomCustomization());
+        boolean canUseInviteOnly = Boolean.TRUE.equals(plan.getAllowInviteOnly());
+
+        if (request.getName() != null) {
+            room.setName(cleanOrNull(request.getName()));
+        }
+
+        if (request.getDescription() != null) {
+            room.setDescription(cleanOrNull(request.getDescription()));
+        }
+
+        if (request.getRoomType() != null) {
+            room.setRoomType(request.getRoomType());
+        }
+
+        if (request.getAccessMode() != null) {
+            if (request.getAccessMode() == AccessMode.INVITE_ONLY && !canUseInviteOnly) {
+                throw new ResponseStatusException(
+                        HttpStatus.PAYMENT_REQUIRED,
+                        "Invite-only rooms are available on Premium and Pro plans"
+                );
+            }
+
+            room.setAccessMode(request.getAccessMode());
+        }
 
         if (request.getMaxParticipants() != null) {
             long current = roomParticipantRepository.countByRoomAndJoinStatus(room, JoinStatus.JOINED);
@@ -128,14 +151,22 @@ public class RoomService {
                 throw new RuntimeException("Cannot reduce maxParticipants below current participants");
             }
 
+            if (request.getMaxParticipants() > plan.getMaxParticipants()) {
+                throw new ResponseStatusException(
+                        HttpStatus.PAYMENT_REQUIRED,
+                        "Your current plan allows up to " + plan.getMaxParticipants() + " participants"
+                );
+            }
+
             room.setMaxParticipants(request.getMaxParticipants());
         }
-        BillingPlanResponse plan = billingService.getCurrentPlan(user);
 
-        boolean canCustomize = Boolean.TRUE.equals(plan.getAllowRoomCustomization());
+        boolean wantsCustomization =
+                request.getThemeColor() != null ||
+                        request.getCoverImageUrl() != null ||
+                        request.getBackgroundUrl() != null;
 
-        if ((request.getThemeColor() != null || request.getCoverImageUrl() != null || request.getBackgroundUrl() != null)
-                && !canCustomize) {
+        if (wantsCustomization && !canCustomize) {
             throw new ResponseStatusException(
                     HttpStatus.PAYMENT_REQUIRED,
                     "Room customization is available on Premium and Pro plans"
@@ -143,11 +174,28 @@ public class RoomService {
         }
 
         if (canCustomize) {
-            if (request.getThemeColor() != null) room.setThemeColor(request.getThemeColor());
-            if (request.getCoverImageUrl() != null) room.setCoverImageUrl(request.getCoverImageUrl());
-            if (request.getBackgroundUrl() != null) room.setBackgroundUrl(request.getBackgroundUrl());
+            if (request.getThemeColor() != null) {
+                room.setThemeColor(cleanOrNull(request.getThemeColor()));
+            }
+
+            if (request.getCoverImageUrl() != null) {
+                room.setCoverImageUrl(cleanOrNull(request.getCoverImageUrl()));
+            }
+
+            if (request.getBackgroundUrl() != null) {
+                room.setBackgroundUrl(cleanOrNull(request.getBackgroundUrl()));
+            }
         }
+
         return mapRoom(room);
+    }
+
+    private String cleanOrNull(String value) {
+        if (value == null || value.trim().isBlank()) {
+            return null;
+        }
+
+        return value.trim();
     }
     public RoomResponse getByCode(String code) {
         WatchRoom room = watchRoomRepository.findByRoomCode(code)
@@ -174,6 +222,7 @@ public class RoomService {
             }
 
             if (participant.getJoinStatus() == JoinStatus.JOINED) {
+                sendParticipantsChanged(room.getRoomCode());
                 return mapRoom(room);
             }
 
@@ -606,6 +655,8 @@ public class RoomService {
     private void sendParticipantsChanged(String roomCode) {
         Map<String, Object> data = new HashMap<>();
         data.put("roomCode", roomCode);
+
+        System.out.println("SEND PARTICIPANTS CHANGED: " + roomCode);
 
         sendRoomEvent(roomCode, "room.participants-changed", data);
     }

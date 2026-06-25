@@ -21,6 +21,8 @@ public class DirectMessageResponse {
     private String receiverAvatarUrl;
 
     private String content;
+    private String messageType;
+
     private Boolean read;
     private LocalDateTime sentAt;
 }

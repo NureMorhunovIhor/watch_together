@@ -36,9 +36,14 @@ public class DirectMessage {
     @Column(name = "sent_at", nullable = false)
     private LocalDateTime sentAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "message_type", nullable = false)
+    private DirectMessageType messageType;
+
     @PrePersist
     public void prePersist() {
         if (sentAt == null) sentAt = LocalDateTime.now();
         if (read == null) read = false;
+        if (messageType == null) messageType = DirectMessageType.TEXT;
     }
 }
